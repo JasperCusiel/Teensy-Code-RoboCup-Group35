@@ -19,6 +19,7 @@
 #define _CALIBRATION_H_
 #include <stdint.h>
 
+
 /**
  * @brief This function performs the offset calibration.\n
  * The function returns the offset value found and programs the offset
@@ -28,6 +29,9 @@
  * @return 0:success, !=0: failed
  * @return offset pointer contains the offset found in mm
  */
+#ifdef __cplusplus
+extern "C" {
+#endif
 int8_t VL53L1X_CalibrateOffset(uint16_t dev, uint16_t TargetDistInMm,
                                int16_t *offset);
 
@@ -46,5 +50,7 @@ int8_t VL53L1X_CalibrateOffset(uint16_t dev, uint16_t TargetDistInMm,
  */
 int8_t VL53L1X_CalibrateXtalk(uint16_t dev, uint16_t TargetDistInMm,
                               uint16_t *xtalk);
-
+#ifdef __cplusplus
+}
+#endif
 #endif
