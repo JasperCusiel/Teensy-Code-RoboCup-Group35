@@ -146,7 +146,6 @@ bool ResetAndInitializeAllSensors(void) {
         Dev_init,
         (Devs[i] << 1)); /* Change i2c address Left is now 0x30 and Dev1 left
                             shift as it uses 7 bit addresses */
-    Serial.printf("I2C address set error code: %d", error);
     dataRead = ReadRegister8(Devs[i], static_cast<uint8_t>(0x10f));
     dataRead = ReadRegister8(Devs[i], static_cast<uint8_t>(0x110));
   }
