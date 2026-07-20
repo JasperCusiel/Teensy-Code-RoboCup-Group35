@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "ToF-Sensors.h"
 #include "display.h"
+#include "smart-servo.h"
+#include <imu.h>
 
 void scanI2C() {
   display_log("Scanning I2C bus...");
@@ -40,9 +42,9 @@ void setup() {
   display_init();
   display_log("Booting...");
 
-
-  tof_init();
   display_log_status("TOF ARRAY", tof_init());
+  display_log_status("SERVOS", smart_servo_init());
+  display_log_status("IMU", imu_init());
   // scanI2C();
 
   // Calibration
@@ -53,5 +55,5 @@ void setup() {
 
 
 void loop() {
-  get_tof_reading();
+  //get_tof_reading();
 }
