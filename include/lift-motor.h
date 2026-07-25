@@ -5,9 +5,14 @@
 #ifndef ROBOCUP_LIFT_MOTOR_H
 #define ROBOCUP_LIFT_MOTOR_H
 
-bool lifter_motor_init();
+#include <DCMotorServo.h>
+#include <Servo.h>
+#include <Encoder.h>
 
-void pwm_skip_tuning();
+bool lifter_motor_init();
+bool home_servo(DCMotorServo *servo);
+
+void pwm_skip_tuning(Servo *motor, uint8_t pwm_pin, Encoder *encoder, void (*motorBreak)(), void (*motorWrite)(int16_t s));
 void serialPrintPWMSkipResults();
 
 

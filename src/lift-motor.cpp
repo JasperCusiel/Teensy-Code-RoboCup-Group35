@@ -2,16 +2,23 @@
 // Created by Jasper Cusiel on 21/07/2026.
 //
 #include  <lift-motor.h>
-#include <DCMotorServo.h>
-#include <Encoder.h>
-#include <Servo.h>
+
 #include <limit-switch.h>
 
-
-#define PWM_PIN 28
+// Motor 1
+#define PWM1_PIN 28
 #define ENC1_A   32
 #define ENC1_B   33
-#define END_STOP_PIN 0
+
+// Motor 2
+#define PWM2_PIN 29
+#define ENC2_A   30
+#define ENC2_B   31
+
+
+#define END_STOP_A_PIN 0
+#define END_STOP_B_PIN 1
+
 #define MAX_TRAVEL_ENC_COUNT 40000
 #define FULL_FORWARD 1950
 #define FULL_REVERSE 1050
@@ -63,74 +70,110 @@ float KP = SERVO_KP;
 float KI = SERVO_KI;
 float KD = SERVO_KD;
 
-Encoder  enc(ENC1_A, ENC1_B);
+Encoder  enc1(ENC1_A, ENC1_B);
 Servo motor1;
 
+Encoder  enc2(ENC2_A, ENC2_B);
+Servo motor2;
 
 
-void motorWrite(int16_t s) {
+void motor1Write(int16_t s) {
   int pulse = map(s, -PWM_MAX, PWM_MAX, FULL_REVERSE, FULL_FORWARD);
   motor1.writeMicroseconds(pulse);
 }
-void motorBrake()           { motor1.writeMicroseconds(STOP);}
-long encRead()              { return enc.read(); }
-void encWrite(long position)       { enc.write(position); }
-bool getLimitSwitch() {
-  return readLimitSwitch(END_STOP_PIN);
+void motor1Brake()           { motor1.writeMicroseconds(STOP);}
+long enc1Read()              { return enc1.read(); }
+void enc1Write(long position)       { enc1.write(position); }
+bool getLimitSwitch1() {
+  return readLimitSwitch(END_STOP_A_PIN);
+}
+
+void motor2Write(int16_t s) {
+  int pulse = map(s, -PWM_MAX, PWM_MAX, FULL_REVERSE, FULL_FORWARD);
+  motor2.writeMicroseconds(pulse);
+}
+void motor2Brake()           { motor2.writeMicroseconds(STOP);}
+long enc2Read()              { return enc2.read(); }
+void enc2Write(long position)       { enc2.write(position); }
+bool getLimitSwitch2() {
+  return readLimitSwitch(END_STOP_B_PIN);
 }
 
 
 
-DCMotorServo servo(motorWrite, motorBrake, encRead, encWrite);
+DCMotorServo servo1(motor1Write, motor1Brake, enc1Read, enc1Write);
+DCMotorServo servo2(motor2Write, motor2Brake, enc2Read, enc2Write);
 
-bool lifter_motor_init() {
-  motor1.attach(PWM_PIN);
-  pinMode(END_STOP_PIN, INPUT);
-
-  //servo.setPWMSkip(25);       // minimum PWM to overcome stiction
-  servo.setAccuracy(10);      // acceptable position error in counts
-  servo.setMaxPWM(PWM_MAX);
-  servo.setPIDTunings(0.15, 0.1, 0.001);
-  servo.attachEndstops(nullptr, &getLimitSwitch);
-
+bool home_servo(DCMotorServo *servo) {
   Serial.println("Back off");
   // Move away from limit switch first
-  servo.setCurrentPosition(0);
-  servo.moveTo(-LIMIT_SWITCH_BACK_OFF);
+  servo->setCurrentPosition(0);
+  servo->moveTo(-LIMIT_SWITCH_BACK_OFF);
 
-  while (!servo.finished()) {
-    servo.run();
+  while (!servo->finished()) {
+    Serial.println(enc1.read());
+    servo->run();
   }
 
   // First fast homing
-  if (servo.startHoming(1, HOMING_SPEED, MAX_TRAVEL_ENC_COUNT)) {
+  if (servo->startHoming(1, HOMING_SPEED, MAX_TRAVEL_ENC_COUNT)) {
     Serial.println("Fast homing...");
   }
 
-  while (servo.isHoming()) {
-    servo.run();
+  while (servo->isHoming()) {
+    servo->run();
   }
 
   Serial.println("Back off");
   // Back off from switch
-  servo.moveTo(-LIMIT_SWITCH_BACK_OFF);
+  servo->moveTo(-LIMIT_SWITCH_BACK_OFF);
 
-  while (!servo.finished()) {
-    servo.run();
+  while (!servo->finished()) {
+    servo->run();
   }
 
   Serial.println("Slow homing");
-  if (servo.startHoming(1, 100, MAX_TRAVEL_ENC_COUNT)) {
-    Serial.println("Lifter Motor Homing slow...");
+  if (servo->startHoming(1, 100, MAX_TRAVEL_ENC_COUNT)) {
+    Serial.println("Lifter Motor A Homing slow...");
   }
 
-  while (servo.isHoming()) {
-    servo.run();
+  while (servo->isHoming()) {
+    servo->run();
   }
 
-  if (servo.isHomed()) {
-    servo.setTravelLimits(0, MAX_TRAVEL_ENC_COUNT);
-    Serial.println("Lifter motor homed.");
+  if (servo->isHomed()) {
+    servo->setTravelLimits(0, MAX_TRAVEL_ENC_COUNT);
+    Serial.println("Lifter motor A homed.");
+    return true;
+  }
+
+  return false;
+
+}
+
+
+bool lifter_motor_init() {
+
+  motor1.attach(PWM1_PIN);
+
+  motor2.attach(PWM2_PIN);
+
+  servo1.setPWMSkip(PWM_SKIP);       // minimum PWM to overcome stiction
+  servo1.setAccuracy(10);      // acceptable position error in counts
+  servo1.setMaxPWM(PWM_MAX);
+  servo1.setPIDTunings(0.15, 0.1, 0.001);
+  servo1.attachEndstops(nullptr, &getLimitSwitch1);
+
+  servo2.setPWMSkip(PWM_SKIP);       // minimum PWM to overcome stiction
+  servo2.setAccuracy(10);      // acceptable position error in counts
+  servo2.setMaxPWM(PWM_MAX);
+  servo2.setPIDTunings(0.15, 0.1, 0.001);
+  servo2.attachEndstops(nullptr, &getLimitSwitch2);
+
+  //pwm_skip_tuning(&motor2, PWM2_PIN, &enc2, motor2Brake, motor2Write);
+  //pwm_skip_tuning(&motor1, PWM1_PIN, &enc1, motor1Brake, motor1Write);
+
+  if (home_servo(&servo1)) {
     return true;
   }
 
@@ -150,12 +193,12 @@ void serialPrintPWMSkipResults()
   Serial.print(", Ramp_Interval: ");
   Serial.print(pwmRampInterval);
   Serial.print(", Encoder: ");
-  Serial.println(enc.read());
+  Serial.println(enc1.read());
 }
 
-void pwm_skip_tuning() {
-  motor1.attach(PWM_PIN);
-  enc.write(0); // Zero the encoder
+void pwm_skip_tuning(Servo *motor, uint8_t pwm_pin, Encoder *encoder, void (*motorBreak)(), void (*motorWrite)(int16_t s)) {
+  motor->attach(pwm_pin);
+  encoder->write(0); // Zero the encoder
 
   // Initialize tuning variables
   pwmRampInterval = INIT_PWM_RAMP_INTERVAL;
@@ -169,7 +212,7 @@ void pwm_skip_tuning() {
   Serial.println("PWM_Start, PWM_Estimate, Ramp_Interval");
 
   // Apply a brake and pause to allow the motor to settle.
-  motorBrake();
+  motorBreak();
   delay(1000);
 
   while (true) {
@@ -183,12 +226,12 @@ void pwm_skip_tuning() {
       Serial.print(pwmStart);
       Serial.print(", Final pwmEstimate: ");
       Serial.println(pwmEstimate);
-      motorBrake();
+      motorBreak();
       while (1)
         ; // Halt execution
     }
 
-    long encoderMovement = abs(enc.read());
+    long encoderMovement = abs(encoder->read());
     if (encoderMovement >= MOVE_STEPS_SENSITIVITY)
     {
       // Significant movement detected.
@@ -204,11 +247,11 @@ void pwm_skip_tuning() {
       serialPrintPWMSkipResults();
 
       // Apply a brake and pause to allow the motor to settle.
-      motorBrake();
+      motorBreak();
       delay(1000);
 
       // Reset encoder for the next iteration.
-      enc.write(0);
+      encoder->write(0);
       // Reset current PWM to new start value.
       currentPWM = pwmStart;
 
@@ -223,10 +266,10 @@ void pwm_skip_tuning() {
     else if (currentTime - lastPWMUpdateTime >= pwmRampInterval)
     {
       lastPWMUpdateTime = currentTime;
-      motorWrite(currentPWM);
+      motorWrite((int16_t)currentPWM);
 
       // Only ramp up PWM if encoder movement is below sensitivity.
-      if (abs(enc.read()) < MOVE_STEPS_SENSITIVITY)
+      if (abs(encoder->read()) < MOVE_STEPS_SENSITIVITY)
       {
         currentPWM++;
         if (currentPWM > PWM_MAX)
@@ -252,8 +295,8 @@ void serialPrintAccuracyResults()
 }
 
 void accuracy_estimate_tuning() {
-  motor1.attach(PWM_PIN);
-  enc.write(0); // Zero the encoder
+  motor1.attach(PWM1_PIN);
+  enc1.write(0); // Zero the encoder
   // servo.setPWMSkip(PWM_START);
 
   // Initialize accuracy tuning parameters
@@ -265,12 +308,11 @@ void accuracy_estimate_tuning() {
     Serial.println("Starting stabilization trials...");
     int successCount = 0;
     int errorCount = 0;
-    bool anyTrialSuccess = false; // Track if any trial succeeded
 
     for (int i = 0; i < TRIALS_PER_ACCURACY; i++)
     {
         // Reset encoder for this trial.
-        enc.write(0);
+        enc1.write(0);
 
         // Run stabilization control for a fixed period.
         unsigned long stabilizeStart = millis();
@@ -278,7 +320,7 @@ void accuracy_estimate_tuning() {
         unsigned long lastControlTime = millis();     // For SYSTEM_DELAY control updates.
         while (millis() - stabilizeStart < STABILIZATION_PERIOD)
         {
-            pos = enc.read();
+            pos = enc1.read();
 
             // Only update control every SYSTEM_DELAY ms.
             if (millis() - lastControlTime >= SYSTEM_DELAY)
@@ -286,15 +328,15 @@ void accuracy_estimate_tuning() {
                 lastControlTime = millis();
                 if (pos < targetSteps - currentAccuracy)
                 {
-                    motorWrite(PWM_MAX);
+                    motor1Write(PWM_MAX);
                 }
                 else if (pos > targetSteps + currentAccuracy)
                 {
-                    motorWrite(-PWM_MAX);
+                    motor1Write(-PWM_MAX);
                 }
                 else
                 {
-                    motorBrake();
+                    motor1Brake();
                 }
             }
 
@@ -306,10 +348,10 @@ void accuracy_estimate_tuning() {
             }
         }
 
-        motorWrite(0); // Release the motor and allow it to stop.
+        motor1Write(0); // Release the motor and allow it to stop.
 
         // Report trial results.
-        long finalError = abs(enc.read() - targetSteps);
+        long finalError = abs(enc1.read() - targetSteps);
         if (finalError <= currentAccuracy)
         {
             successCount++;
@@ -332,7 +374,7 @@ void accuracy_estimate_tuning() {
         Serial.println("Stabilization failed at current accuracy.");
         Serial.print("Final achieved accuracy: ");
         Serial.println(currentAccuracy);
-        motorWrite(0); // Release the motor and allow it to stop.
+        motor1Write(0); // Release the motor and allow it to stop.
         while (1)
             ; // Halt execution.
     }
@@ -350,14 +392,14 @@ void accuracy_estimate_tuning() {
     Serial.print(", new = ");
     Serial.println(currentAccuracy);
 
-    enc.write(0);
+    enc1.write(0);
     delay(2000);
 
     if (previousAccuracy - currentAccuracy <= 0)
     {
         Serial.println("Final achieved accuracy:");
         Serial.println(previousAccuracy);
-        motorBrake();
+        motor1Brake();
         while (1)
             ; // Halt execution.
     }
@@ -365,14 +407,14 @@ void accuracy_estimate_tuning() {
 }
 
 void pid_tuning() {
-  motor1.attach(PWM_PIN);
-  enc.write(0); // Zero the encoder
+  motor1.attach(PWM1_PIN);
+  enc1.write(0); // Zero the encoder
 
   // Configure the PID controller
-  servo.myPID->SetTunings(KP, KI, KD);
-  servo.setPWMSkip(PWM_SKIP);
-  servo.setAccuracy(ACCURACY);
-  servo.setMaxPWM(PWM_MAX);
+  servo1.myPID->SetTunings(KP, KI, KD);
+  servo1.setPWMSkip(PWM_SKIP);
+  servo1.setAccuracy(ACCURACY);
+  servo1.setMaxPWM(PWM_MAX);
 
   Serial.println("Setpoint,Input,Output");
 
@@ -380,13 +422,13 @@ void pid_tuning() {
     static unsigned long lastPrintTime = millis();
 
     // Run the PID loop
-    servo.run();
+    servo1.run();
 
     // Print PID values for tuning via Serial Plotter every 20ms
     if (millis() - lastPrintTime > 20)
     {
         lastPrintTime = millis();
-        Serial.println(servo.getSerialPlotter());
+        Serial.println(servo1.getSerialPlotter());
     }
 
     // Allow PID tuning commands via Serial
@@ -398,21 +440,21 @@ void pid_tuning() {
         if (command.startsWith("KP="))
         {
             KP = command.substring(3).toFloat();
-            servo.myPID->SetTunings(KP, KI, KD);
+            servo1.myPID->SetTunings(KP, KI, KD);
             Serial.print("KP set to: ");
             Serial.println(KP);
         }
         else if (command.startsWith("KI="))
         {
             KI = command.substring(3).toFloat();
-            servo.myPID->SetTunings(KP, KI, KD);
+            servo1.myPID->SetTunings(KP, KI, KD);
             Serial.print("KI set to: ");
             Serial.println(KI);
         }
         else if (command.startsWith("KD="))
         {
             KD = command.substring(3).toFloat();
-            servo.myPID->SetTunings(KP, KI, KD);
+            servo1.myPID->SetTunings(KP, KI, KD);
             Serial.print("KD set to: ");
             Serial.println(KD);
         }
@@ -421,7 +463,7 @@ void pid_tuning() {
             long newPosition = command.substring(5).toInt();
             if (newPosition != 0)
             {
-                servo.move(newPosition);
+                servo1.move(newPosition);
                 Serial.print("Moving to: ");
                 Serial.println(newPosition);
             }
@@ -435,7 +477,7 @@ void pid_tuning() {
             int maxPWM = command.substring(7).toInt();
             if (maxPWM >= 0 && maxPWM <= 255)
             {
-                servo.setMaxPWM(maxPWM);
+                servo1.setMaxPWM(maxPWM);
                 Serial.print("Setting MAXPWM to: ");
                 Serial.println(maxPWM);
             }
