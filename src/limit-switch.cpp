@@ -38,6 +38,7 @@ bool limit_switches_init() {
   }
   Serial.println("Limit switches init");
   digitalIO.pinMode(SX1509_AIO0, INPUT);
+  // digitalIO.pinMode(SX1509_AIO1, INPUT);
 
   return true;
 }
