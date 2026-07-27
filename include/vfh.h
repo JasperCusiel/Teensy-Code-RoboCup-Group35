@@ -10,14 +10,21 @@ struct VFH {
   float histogram[NUM_SECTORS];
   bool free_directions[NUM_SECTORS];
   float sector_angles[NUM_SECTORS];
+  float target_angle;
+  float steering_angle;
 };
 
-void vfh_init(VFH *vfh);
+
+void vfh_init();
 void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
                          float weight, float range);
-void build_histogram(VFH *vfh, const lidar_scan *new_lidar_scan);
-void threshold_histogram(VFH *vfh);
-float get_best_direction(VFH *vfh, float target_angle);
-float compute_vfh(VFH *vfh, const lidar_scan *scan, float *target_angle);
+void build_histogram(const lidar_scan *new_lidar_scan);
+void threshold_histogram();
+float get_best_direction(float target_angle);
+void compute_vfh(const lidar_scan *scan);
+float* get_histogram();
+void set_target_angle(const float target_angle);
+float get_target_angle();
+float get_steering_angle();
 
 #endif // ROBOCUP_VFH_H
