@@ -1,8 +1,13 @@
 #ifndef TOF_SENSORS_H
 #define TOF_SENSORS_H
 
+#include <lidar-config.h>
 #include <stdint.h>
-#include <stdbool.h>
+
+struct lidar_scan {
+  float ranges[NumOfTOFSensors * NumOfZonesPerSensor];
+  uint8_t sector_index[NumOfTOFSensors * NumOfZonesPerSensor];
+};
 
 bool tof_init(void);
 void ResetAllSensors(void);
@@ -14,9 +19,7 @@ bool ResetAndInitializeAllSensors(void);
 void PlotPolarData(uint8_t SensorNum, uint8_t CurrentZone, uint8_t NumOfZones,
                    uint16_t Distance);
 void get_ToFCalibration();
-void get_tof_reading(void);
-
+void get_tof_reading(lidar_scan* scan);
+void calculate_sector_indices(lidar_scan* scan);
 
 #endif
-
-

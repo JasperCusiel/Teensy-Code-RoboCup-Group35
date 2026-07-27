@@ -12,20 +12,6 @@ extern "C" {
 #include "stdint.h"
 
 
-#define RadarCircleRadius (180.0 / 2.0)
-#define Pi 3.1415
-#define ROI_CONFIG__USER_ROI_CENTRE_SPAD 0x007F
-#define NumOfTOFSensors 6
-#define TotalWidthOfSPADS 16
-#define WidthOfSPADsPerZone 4
-#define NumOfSPADsShiftPerZone 1
-#define HorizontalFOVofSensor 19.09
-#define SingleSPADFOV (HorizontalFOVofSensor / TotalWidthOfSPADS)
-#define NumOfZonesPerSensor                                                    \
-  (((TotalWidthOfSPADS - WidthOfSPADsPerZone) / NumOfSPADsShiftPerZone) + 1)
-#define StartingZoneAngle (WidthOfSPADsPerZone / 2 * SingleSPADFOV)
-#define ZoneFOVChangePerStep (SingleSPADFOV * NumOfSPADsShiftPerZone)
-
 // IO expander
 const byte SX1509_ADDRESS = 0x3F;
 SX1509 io; // Create an SX1509 object to be used throughout
@@ -81,7 +67,7 @@ int16_t OffsetCal[NumOfTOFSensors * NumOfZonesPerSensor] = {
 
 #endif
 
-bool tof_init(void) {
+bool tof_init() {
   if (io.begin(SX1509_ADDRESS)) {
     Serial.println("SX1509 Port Expander Started");
   }
@@ -93,6 +79,24 @@ bool tof_init(void) {
   Serial.println("pins driven low");
 
   return ResetAndInitializeAllSensors();  // true if all sensors started correctly
+}
+
+void calculate_sector_indices(lidar_scan* scan) {
+  for(int j=0;j<NumOfTOFSensors * NumOfZonesPerSensor;j++)
+  {
+    float angle = FOV_MIN + j*(FOV_MAX-FOV_MIN) /((NumOfTOFSensors * NumOfZonesPerSensor) -1);
+
+    int sector = (angle - FOV_MIN)/SECTOR_WIDTH;
+
+    if(sector < 0) {
+      sector=0;
+    }
+
+    if(sector >= NUM_SECTORS) {
+      sector=NUM_SECTORS-1;
+    }
+    scan->sector_index[j] = sector;
+  }
 }
 
 void ResetAllSensors(void) {
@@ -142,7 +146,7 @@ bool ResetAndInitializeAllSensors(void) {
       error += VL53L1X_BootState(Dev_init, &Bootstate);
     }
     VL53L1X_SensorInit(Dev_init); /* Initialize sensor  */
-    uint8_t error = VL53L1X_SetI2CAddress(
+    error = VL53L1X_SetI2CAddress(
         Dev_init,
         (Devs[i] << 1)); /* Change i2c address Left is now 0x30 and Dev1 left
                             shift as it uses 7 bit addresses */
@@ -196,6 +200,7 @@ void PlotPolarData(uint8_t SensorNum, uint8_t CurrentZone, uint8_t NumOfZones,
   }
   LidarAngle[SensorNum * 13 + CurrentZone] = SystemAngle;
   LidarDistance[SensorNum * 13 + CurrentZone] = (uint16_t)CorrectedDistance;
+
 }
 
 void get_ToFCalibration() {
@@ -216,7 +221,7 @@ void get_ToFCalibration() {
 }
 
 
-void get_tof_reading(void) {
+void get_tof_reading(lidar_scan* scan) {
   error = 0;
   TimeStart = millis();
   Timeout = 0;
@@ -273,9 +278,10 @@ void get_tof_reading(void) {
     delay(TimingBudget);
     TimeEnd = millis();
     TotalTime = (TimeEnd - TimeStart);
-    snprintf(BigBuff, sizeof(BigBuff), "Time: %ld\n", TotalTime);
-    Serial.print(BigBuff);
+    // snprintf(BigBuff, sizeof(BigBuff), "Time: %ld\n", TotalTime);
+    // Serial.print(BigBuff);
 
+    #ifdef DEBUG
     // Distances
     Serial.print("D ");
     for (int i = 0; i < 78; i++)
@@ -287,6 +293,11 @@ void get_tof_reading(void) {
     for (int i = 0; i < 78; i++)
       Serial.printf("%.1f ", LidarAngle[i]);
     Serial.print("\n");
+    #endif
+    for (size_t n = 0; n < NumOfTOFSensors * NumOfZonesPerSensor; n++) {
+      scan->ranges[n] = LidarDistance[n] / 1000.0f;
+    }
+
   }
   if (error != 0) {
     Serial.print("Some Errors seen\n");
