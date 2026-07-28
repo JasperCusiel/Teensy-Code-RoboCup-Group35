@@ -9,7 +9,12 @@
 #define SYSTEM_STARTED 0x0F
 #define NO_ERROR 0
 
+float heading_offset = 0;   // initial heading [rad]
+
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire1);
+
+imu_data data;
+
 
 void displaySensorStatus(void)
 {
@@ -83,5 +88,48 @@ bool imu_init() {
     return false;
   }
 
+  imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
+  heading_offset = (float)radians(euler.x());
+
   return true;
 }
+
+void imu_get_reading() {
+  imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
+  float heading = heading_offset - (float)radians(euler.x());
+
+  if (heading > PI)
+    heading -= 2 * PI;
+
+  if (heading < -PI)
+    heading += 2 * PI;
+
+
+  data.heading = heading;
+
+  // linear acceleration
+  imu::Vector<3> accel = bno.getVector(
+      Adafruit_BNO055::VECTOR_LINEARACCEL
+  );
+
+  // gyro
+  imu::Vector<3> gyro = bno.getVector(
+      Adafruit_BNO055::VECTOR_GYROSCOPE
+  );
+
+  data.gyro_z = (float)gyro.z();
+
+  data.accel_x = (float)accel.x();
+  data.accel_y = (float)accel.y();
+
+}
+
+float imu_get_heading() {
+  return data.heading;
+}
+
+float imu_get_gyro_z() {
+  Serial.printf("gx: %f \n", data.gyro_z);
+  return data.gyro_z;
+}
+
