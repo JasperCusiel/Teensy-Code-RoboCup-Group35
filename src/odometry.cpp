@@ -5,13 +5,16 @@
 #define EKF_N 5
 #define EKF_M 3
 
+#define ODOM_FREQ 95
+#define DT (1.0f/ ODOM_FREQ)
+
 #include "odometry.h"
 #include "fl/math_macros.h"
 #include "imu.h"
 #include "optical-flow.h"
 #include "tinyekf.h"
+#include <arduino.h>
 
-static const float EPS = 1e-4;
 
 // Proccess noise covariance
 static const float Q[EKF_N*EKF_N] = {
@@ -46,6 +49,7 @@ static const float H[EKF_M*EKF_N] = {
 };
 
 static ekf_t _ekf;
+static sensor_data _sensor_data;
 
 
 void odometry_init() {
@@ -82,79 +86,82 @@ void update_F(float dt, float vx, float vy)
 }
 
 
-void odometry_update(float dt) {
-  float heading = imu_get_heading();
+void odometry_update() {
   float gyro_z = imu_get_gyro_z();
-  float vx, vy;
-  flow_get_velocity(&vx, &vy);
-  compensate_flow(&vx, &vy, gyro_z);
+  float heading = imu_get_heading();
+
+  float vx_meas, vy_meas;
+  flow_get_velocity(&vx_meas, &vy_meas, DT);
 
 
-  // Prediction model
+  _sensor_data.gyro_z = gyro_z;
+  _sensor_data.heading = heading;
+  _sensor_data.vx_meas = vx_meas;
+  _sensor_data.vy_meas = vy_meas;
+
+  compensate_flow(&vx_meas, &vy_meas, gyro_z);
+
   float theta = _ekf.x[2];
   float c = cosf(theta);
   float s = sinf(theta);
 
-  // Convert body velocity to world velocity
+  // Use STATE velocity for prediction
   float vx_world = _ekf.x[3] * c - _ekf.x[4] * s;
   float vy_world = _ekf.x[3] * s + _ekf.x[4] * c;
 
-  float predicted_heading = _ekf.x[2] + gyro_z * dt;
+  float predicted_heading = theta + gyro_z * DT;
 
-  while (predicted_heading > PI)
-    predicted_heading -= 2 * PI;
-
-  while (predicted_heading < -PI)
-    predicted_heading += 2 * PI;
-
+  // Wrap
+  while (predicted_heading > PI) predicted_heading -= 2 * PI;
+  while (predicted_heading < -PI) predicted_heading += 2 * PI;
 
   float fx[EKF_N] = {
-    _ekf.x[0] + vx_world * dt,
-    _ekf.x[1] + vy_world * dt,
+    _ekf.x[0] + vx_world * DT,
+    _ekf.x[1] + vy_world * DT,
     predicted_heading,
-    vx,
-    vy
-};
+    _ekf.x[3],
+    _ekf.x[4]
+  };
 
-  // Process model:
-  // x,y updated from body velocity
-  // heading updated from gyro
-  // velocity updated from optical flow
-  update_F(dt, vx, vy);
-
-  // Run the prediction step of the DKF
+  update_F(DT, _ekf.x[3], _ekf.x[4]);
   ekf_predict(&_ekf, fx, F, Q);
 
-  // Wrap measurement relative to predicted state
+  // Wrap heading measurement
   float heading_error = heading - _ekf.x[2];
-
-  while (heading_error > PI)
-    heading_error -= 2 * PI;
-
-  while (heading_error < -PI)
-    heading_error += 2 * PI;
+  while (heading_error > PI) heading_error -= 2 * PI;
+  while (heading_error < -PI) heading_error += 2 * PI;
 
   float wrapped_heading = _ekf.x[2] + heading_error;
 
-
-  // Expected measurements from state
   float hx[EKF_M] = {
-    _ekf.x[3],  // predicted vx
-    _ekf.x[4],  // predicted vy
-    _ekf.x[2]   // predicted heading
+    _ekf.x[3],
+    _ekf.x[4],
+    _ekf.x[2]
   };
 
-  // Set the observation vector z (measurements)
-  // [body vx, body vy, heading]
-  float z[EKF_M] = {vx, vy, wrapped_heading};
+  float z[EKF_M] = {
+    vx_meas,
+    vy_meas,
+    wrapped_heading
+  };
 
-  // Run the update step
   ekf_update(&_ekf, z, hx, H, R);
 }
 
-void get_ekf_pose(float *out) {
-  for (int i = 0; i < EKF_N; i++) {
-    out[i] = _ekf.x[i];
-  }
+void print_ekf_pose() {
+  Serial.printf("x=%.2f y=%.2f heading=%.2f\n", _ekf.x[0], _ekf.x[1], degrees(_ekf.x[2]));
+}
+
+void get_ekf_pose(float *x, float* y, float* theta) {
+  *x = _ekf.x[0];
+  *y = _ekf.x[1];
+  *theta = _ekf.x[2];
+}
+
+void get_sensor_data(float* gyro_z, float* heading, float* vx_meas, float* vy_meas) {
+  *gyro_z = _sensor_data.gyro_z;
+  *heading = _sensor_data.heading;
+  *vx_meas = _sensor_data.vx_meas;
+  *vy_meas = _sensor_data.vy_meas;
 }
 
