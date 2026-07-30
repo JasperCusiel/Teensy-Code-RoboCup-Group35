@@ -7,6 +7,7 @@
 #include "ToF-Sensors.h"
 #include "lidar-config.h"
 #include "vfh.h"
+#include "odometry.h"
 
 
 
@@ -23,12 +24,21 @@ Encoder  input_encoder(ENCODER_A, ENCODER_B);
 enum Page {
   PAGE_MENU,
   PAGE_VFH,
-  PAGE_SENSORS,
-  PAGE_DEBUG
+  PAGE_DEBUG,
+  PAGE_ODOM
 };
+
+const char *menuItems[] = {
+  "VFH",
+  "Debug",
+  "Odometry"
+};
+#define MENU_ITEMS_COUNT 3
+#define DEBOUNCE_TIME_MS 20
 
 Page currentPage = PAGE_DEBUG;
 int menuIndex = 0;
+int32_t last_encoder_count = 0;
 
 #define HISTOGRAM_X 64
 #define HISTOGRAM_Y 63
@@ -39,6 +49,66 @@ static U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 
 static char lines[MAX_LINES][17];
 static uint8_t lineCount = 0;
+
+bool read_button(uint8_t pin) {
+  static uint32_t lastChange = 0;
+  static bool lastState = HIGH;
+
+  bool current = !digitalRead(pin);
+
+  if (current != lastState) {
+    lastChange = millis();
+    lastState = current;
+  }
+
+  if (millis() - lastChange > DEBOUNCE_TIME_MS) {
+    return current;
+  }
+
+  return lastState;
+}
+
+void update_input() {
+  int32_t delta = input_encoder.readAndReset() / 2;
+
+  if (currentPage == PAGE_MENU) {
+
+    if (delta != 0) {
+      menuIndex += delta;
+
+      if (menuIndex < 0)
+        menuIndex = 0;
+
+      if (menuIndex >= MENU_ITEMS_COUNT)
+        menuIndex = MENU_ITEMS_COUNT - 1;
+    }
+    if (read_button(SW_PIN)) {
+      currentPage = (Page)(menuIndex + 1);
+    }
+  }
+  else {
+
+    if (read_button(SW_PIN)) {
+      currentPage = PAGE_MENU;
+    }
+  }
+}
+
+void draw_menu() {
+
+  for (int i = 0; i < MENU_ITEMS_COUNT; i++) {
+    int y = (i + 1) * 12;
+
+    if (i == menuIndex) {
+      display.drawBox(0, y - 10, 128, 12);
+      display.setDrawColor(0);
+      display.drawStr(2, y, menuItems[i]);
+      display.setDrawColor(1);
+    } else {
+      display.drawStr(2, y, menuItems[i]);
+    }
+  }
+}
 
 void display_init() {
   display.begin();
@@ -73,9 +143,9 @@ void draw() {
   do {
     display.setFont(u8g2_font_6x12_tr);
     switch (currentPage) {
-    // case PAGE_MENU:    drawMenu(); break;
+    case PAGE_MENU:  draw_menu(); break;
     case PAGE_VFH:     draw_vfh(get_histogram()); break;
-    // case PAGE_SENSORS: drawSensors(); break;
+    case PAGE_ODOM: draw_odometry(); break;
     case PAGE_DEBUG:   draw_debug(); break;
     }
 
@@ -184,7 +254,43 @@ void draw_vfh(const float* histogram) {
   }
 }
 
-void start_vfh() {
-  currentPage = PAGE_VFH;
+
+void draw_odometry() {
+  // Title
+  display.drawStr(30, 0, "Odometry");
+
+  float x, y, theta;
+  get_ekf_pose(&x, &y, &theta);
+
+  float gyro_z, heading, vx, vy;
+  get_sensor_data(&gyro_z, &heading, &vx, &vy);
+
+  // display.drawStr(0, 2, "EKF Pose");
+
+  char buf[20];
+  // Draw X Y Theta
+  snprintf(buf, sizeof(buf), "X:%5.2f", x);
+  display.drawStr(0, 12, buf);
+
+  snprintf(buf, sizeof(buf), "Y:%5.2f", y);
+  display.drawStr(0, 24, buf);
+
+  snprintf(buf, sizeof(buf), "Theta:%5.2f", degrees(theta));
+  display.drawStr(0, 36, buf);
+
+
+  // Raw sensor data
+  snprintf(buf, sizeof(buf), "Gyro Z:%5.2f", gyro_z);
+  display.drawStr(0, 48, buf);
+
+  snprintf(buf, sizeof(buf), "HDG:%5.2f", degrees(heading));
+  display.drawStr(64, 12, buf);
+
+  snprintf(buf, sizeof(buf), "vX:%5.2f", vx);
+  display.drawStr(0, 60, buf);
+
+  snprintf(buf, sizeof(buf), "vY:%5.2f", vx);
+  display.drawStr(64, 60, buf);
+
 }
 
