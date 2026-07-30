@@ -95,6 +95,13 @@ bool imu_init() {
 }
 
 void imu_get_reading() {
+  // Possible vector values can be:
+  // - VECTOR_ACCELEROMETER - m/s^2
+  // - VECTOR_MAGNETOMETER  - uT
+  // - VECTOR_GYROSCOPE     - rad/s
+  // - VECTOR_EULER         - degrees
+  // - VECTOR_LINEARACCEL   - m/s^2
+  // - VECTOR_GRAVITY       - m/s^2
   imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
   float heading = heading_offset - (float)radians(euler.x());
 
@@ -129,7 +136,6 @@ float imu_get_heading() {
 }
 
 float imu_get_gyro_z() {
-  Serial.printf("gx: %f \n", data.gyro_z);
   return data.gyro_z;
 }
 
