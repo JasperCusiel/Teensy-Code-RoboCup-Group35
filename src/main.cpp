@@ -10,11 +10,28 @@
 #include <lift-motor.h>
 #include <limit-switch.h>
 #include <vfh.h>
+#include "odometry.h"
+
+#include "scheduler.h"
+#define HZ_TO_US(x) (1000000UL / (x)) // convert hz to micro seconds
+#define NUM_TASKS (sizeof(tasks) / sizeof(tasks[0]))
+
 
 #define GO_BTN A6
 
 
-lidar_scan scan;
+uint32_t last_time_1 = micros();
+float state[3];
+
+task_t tasks[] = {
+  { odometry_update,  HZ_TO_US(95), 0 },
+  { compute_vfh,  HZ_TO_US(10), 0 },
+  { draw,   HZ_TO_US(5),  0 },
+{ update_input,   HZ_TO_US(5),  0 },
+  // { get_tof_reading, HZ_TO_US(6),  0 },
+//{ print_ekf_pose, HZ_TO_US(1),  0 },
+{ imu_get_reading, HZ_TO_US(95),  0 }
+};
 
 void scanI2C() {
   display_log("Scanning I2C bus...");
@@ -50,7 +67,7 @@ void setup() {
   display_init();
 
   // Start and check sensors
-  display_log_status("TOF ARRAY", tof_init());
+  // display_log_status("TOF ARRAY", tof_init());
   display_log_status("SERVOS", smart_servo_init());
   display_log_status("IMU", imu_init());
   display_log_status("OPT FLOW", optical_flow_init());
@@ -60,7 +77,9 @@ void setup() {
   //display_log_status("LIFTER SERVO", lifter_motor_init());
 
   vfh_init();
-  calculate_sector_indices(&scan);
+  calculate_sector_indices();
+
+  odometry_init();
 
 
   // scanI2C();
@@ -78,25 +97,13 @@ void setup() {
     delay(50);
   }
   Serial.println("Released");
-  start_vfh();
+
+  float target_angle = 0.0f;
+  set_target_angle(target_angle);
 }
 
 
 
 void loop() {
-  get_tof_reading(&scan);
-  float target_angle = 0.0f;
-  set_target_angle(target_angle);
-  compute_vfh(&scan);
-
-  // Serial.print("Steer Angle:");
-  // if (isnan(steering_angle)) {
-  //   Serial.println("NAN");
-  // } else {
-  //   steering_angle = steering_angle * (180 / Pi);
-  //   Serial.println(steering_angle);
-  // }
-  draw();
-
-
+  scheduler_run(tasks, NUM_TASKS);
 }
