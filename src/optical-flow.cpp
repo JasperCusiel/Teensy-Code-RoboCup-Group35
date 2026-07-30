@@ -32,22 +32,20 @@ bool optical_flow_init() {
   return false;
 }
 
-void flow_get_velocity(float *vx, float *vy) {
+void flow_get_velocity(float *vx, float *vy, float dt) {
   int16_t dx, dy;
   flow.readMotionCount(&dx, &dy);
+  // From: https://github.com/PX4/PX4-Autopilot/blob/fe80e7aa468a50bec6b035d0e8e4e37e516c84ff/src/drivers/optical_flow/pmw3901/PMW3901.cpp
+  float flow_rate_x = (float)dx / 385.0f; // proportional factor + convert from pixels to radians
+  float flow_rate_y = (float)dy / 385.0f; // proportional factor + convert from pixels to radians
 
-  uint32_t current_time = millis();
-  uint32_t dt = millis() - last_time;
-
-  last_time = current_time;
-
-  *vx = dx * HEIGHT * FLOW_SCALE / dt;
-  *vy = dy * HEIGHT * FLOW_SCALE / dt;
+  *vx = flow_rate_x / dt * HEIGHT;
+  *vy = flow_rate_y / dt * HEIGHT;
 }
 
 // Compensate for sensor offset
 void compensate_flow(float *vx, float *vy, float omega)
 {
-  *vx += omega * FLOW_OFFSET_Y;
-  *vy -= omega * FLOW_OFFSET_X;
+  *vx -= radians(omega) * FLOW_OFFSET_Y;
+  *vy += radians(omega) * FLOW_OFFSET_X;
 }
