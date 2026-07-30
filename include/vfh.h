@@ -18,10 +18,10 @@ struct VFH {
 void vfh_init();
 void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
                          float weight, float range);
-void build_histogram(const lidar_scan *new_lidar_scan);
+void build_histogram();
 void threshold_histogram();
 float get_best_direction(float target_angle);
-void compute_vfh(const lidar_scan *scan);
+void compute_vfh();
 float* get_histogram();
 void set_target_angle(const float target_angle);
 float get_target_angle();

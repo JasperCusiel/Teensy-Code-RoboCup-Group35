@@ -34,7 +34,8 @@ void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
   }
 }
 
-void build_histogram(const lidar_scan *new_lidar_scan) {
+void build_histogram() {
+  lidar_scan* new_lidar_scan = get_scan();
   for (size_t i = 0; i < NUM_SECTORS; i++) {
     vfh.histogram[i] = 0.0f;
   }
@@ -86,8 +87,8 @@ float get_best_direction(float target_angle) {
   return best_angle;
 }
 
-void compute_vfh(const lidar_scan *scan) {
-  build_histogram(scan);
+void compute_vfh() {
+  build_histogram();
   threshold_histogram();
   vfh.steering_angle = get_best_direction(vfh.target_angle);
 }
