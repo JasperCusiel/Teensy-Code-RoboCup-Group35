@@ -19,7 +19,9 @@ bool ResetAndInitializeAllSensors(void);
 void PlotPolarData(uint8_t SensorNum, uint8_t CurrentZone, uint8_t NumOfZones,
                    uint16_t Distance);
 void get_ToFCalibration();
-void get_tof_reading(lidar_scan* scan);
-void calculate_sector_indices(lidar_scan* scan);
+void get_tof_reading();
+void calculate_sector_indices();
+lidar_scan* get_scan();
+
 
 #endif

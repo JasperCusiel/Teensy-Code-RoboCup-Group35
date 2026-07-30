@@ -17,6 +17,8 @@ const byte SX1509_ADDRESS = 0x3F;
 SX1509 io; // Create an SX1509 object to be used throughout
 const uint8_t xshutPins[NumOfTOFSensors] = {0, 1, 2, 3, 4, 5};
 
+static lidar_scan scan;
+
 /* ----- VL53L1X variables ----- */
 
 uint16_t Dev_init = 0x29; /* I2C address of device 1 */
@@ -81,7 +83,7 @@ bool tof_init() {
   return ResetAndInitializeAllSensors();  // true if all sensors started correctly
 }
 
-void calculate_sector_indices(lidar_scan* scan) {
+void calculate_sector_indices() {
   for(int j=0;j<NumOfTOFSensors * NumOfZonesPerSensor;j++)
   {
     float angle = FOV_MIN + j*(FOV_MAX-FOV_MIN) /((NumOfTOFSensors * NumOfZonesPerSensor) -1);
@@ -95,7 +97,7 @@ void calculate_sector_indices(lidar_scan* scan) {
     if(sector >= NUM_SECTORS) {
       sector=NUM_SECTORS-1;
     }
-    scan->sector_index[j] = sector;
+    scan.sector_index[j] = sector;
   }
 }
 
@@ -221,7 +223,7 @@ void get_ToFCalibration() {
 }
 
 
-void get_tof_reading(lidar_scan* scan) {
+void get_tof_reading() {
   error = 0;
   TimeStart = millis();
   Timeout = 0;
@@ -295,11 +297,15 @@ void get_tof_reading(lidar_scan* scan) {
     Serial.print("\n");
     #endif
     for (size_t n = 0; n < NumOfTOFSensors * NumOfZonesPerSensor; n++) {
-      scan->ranges[n] = LidarDistance[n] / 1000.0f;
+      scan.ranges[n] = LidarDistance[n] / 1000.0f;
     }
 
   }
   if (error != 0) {
     Serial.print("Some Errors seen\n");
   }
+}
+
+lidar_scan* get_scan() {
+  return &scan;
 }
