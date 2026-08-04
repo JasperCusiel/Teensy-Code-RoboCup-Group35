@@ -11,6 +11,8 @@
 #include <limit-switch.h>
 #include <vfh.h>
 #include "odometry.h"
+#include "weight-detection.h"
+#include "sensors.h"
 
 #include "scheduler.h"
 #define HZ_TO_US(x) (1000000UL / (x)) // convert hz to micro seconds
@@ -18,6 +20,7 @@
 
 
 #define GO_BTN A6
+
 
 
 uint32_t last_time_1 = micros();
@@ -32,6 +35,7 @@ task_t tasks[] = {
 //{ print_ekf_pose, HZ_TO_US(1),  0 },
 { imu_get_reading, HZ_TO_US(95),  0 }
 };
+
 
 void scanI2C() {
   display_log("Scanning I2C bus...");
@@ -59,6 +63,7 @@ void scanI2C() {
   }
 }
 
+
 void setup() {
   Serial.begin(115200);
   Wire.begin();
@@ -66,37 +71,28 @@ void setup() {
 
   display_init();
 
-  // Start and check sensors
-  // display_log_status("TOF ARRAY", tof_init());
-  display_log_status("SERVOS", smart_servo_init());
-  display_log_status("IMU", imu_init());
-  display_log_status("OPT FLOW", optical_flow_init());
-  display_log_status("COLOUR", colour_sensor_init());
-  display_log_status("INDUCTIVE", inductive_sensor_init());
-  display_log_status("LIMIT SW's", limit_switches_init());
-  //display_log_status("LIFTER SERVO", lifter_motor_init());
+  sensors_init();
 
   vfh_init();
   calculate_sector_indices();
 
   odometry_init();
 
-
   // scanI2C();
 
   // Calibration
   //get_ToFCalibration();
 
+  Serial.println("Push GO BTN to start");
   // Wait for GO button to be pushed to start program
   pinMode(GO_BTN, INPUT);
   while (digitalRead(GO_BTN) == LOW) {
     delay(50);
   }
-  Serial.println("Pushed");
   while (digitalRead(GO_BTN) == HIGH) {
     delay(50);
   }
-  Serial.println("Released");
+  Serial.println("Start");
 
   float target_angle = 0.0f;
   set_target_angle(target_angle);
