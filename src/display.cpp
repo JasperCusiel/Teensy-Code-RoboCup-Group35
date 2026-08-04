@@ -8,6 +8,9 @@
 #include "lidar-config.h"
 #include "vfh.h"
 #include "odometry.h"
+#include "weight-detection.h"
+#include "button.h"
+#include "sensors.h"
 
 
 
@@ -21,20 +24,18 @@
 
 Encoder  input_encoder(ENCODER_A, ENCODER_B);
 
-enum Page {
-  PAGE_MENU,
-  PAGE_VFH,
-  PAGE_DEBUG,
-  PAGE_ODOM
-};
+bool boot_okay = true;
+const char *failed_sensor = nullptr;
+
 
 const char *menuItems[] = {
   "VFH",
   "Debug",
-  "Odometry"
+  "Odometry",
+  "8x8 ToF"
 };
-#define MENU_ITEMS_COUNT 3
-#define DEBOUNCE_TIME_MS 20
+#define MENU_ITEMS_COUNT 4
+
 
 Page currentPage = PAGE_DEBUG;
 int menuIndex = 0;
@@ -50,23 +51,6 @@ static U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 static char lines[MAX_LINES][17];
 static uint8_t lineCount = 0;
 
-bool read_button(uint8_t pin) {
-  static uint32_t lastChange = 0;
-  static bool lastState = HIGH;
-
-  bool current = !digitalRead(pin);
-
-  if (current != lastState) {
-    lastChange = millis();
-    lastState = current;
-  }
-
-  if (millis() - lastChange > DEBOUNCE_TIME_MS) {
-    return current;
-  }
-
-  return lastState;
-}
 
 void update_input() {
   int32_t delta = input_encoder.readAndReset() / 2;
@@ -95,7 +79,6 @@ void update_input() {
 }
 
 void draw_menu() {
-
   for (int i = 0; i < MENU_ITEMS_COUNT; i++) {
     int y = (i + 1) * 12;
 
@@ -113,28 +96,7 @@ void draw_menu() {
 void display_init() {
   display.begin();
   display_log("BOOT OK");
-  currentPage = PAGE_DEBUG;
-
   pinMode(SW_PIN, INPUT_PULLUP);
-  // long oldPosition  = -999;
-  // while (true) {
-  //   // Read the current position of the encoder
-  //   long newPosition = input_encoder.read();
-  //
-  //   // Only print if the value has changed
-  //   if (newPosition != oldPosition) {
-  //     oldPosition = newPosition;
-  //     Serial.print("Position: ");
-  //     Serial.println(newPosition);
-  //   }
-  //
-  //   // Read the push-button switch state (LOW means pressed)
-  //   if (digitalRead(SW_PIN) == LOW) {
-  //     Serial.println("Button Pressed!");
-  //     delay(250); // Simple debounce delay
-  //   }
-  // }
-
 }
 
 void draw() {
@@ -147,6 +109,8 @@ void draw() {
     case PAGE_VFH:     draw_vfh(get_histogram()); break;
     case PAGE_ODOM: draw_odometry(); break;
     case PAGE_DEBUG:   draw_debug(); break;
+    case PAGE_8X8_TOF: draw_depth_data(display); break;
+    case PAGE_BOOT_STATUS: draw_boot_status(); break;
     }
 
   } while (display.nextPage());
@@ -254,7 +218,6 @@ void draw_vfh(const float* histogram) {
   }
 }
 
-
 void draw_odometry() {
   // Title
   display.drawStr(30, 0, "Odometry");
@@ -294,3 +257,23 @@ void draw_odometry() {
 
 }
 
+void draw_boot_status() {
+
+  if (sensors_boot_okay()) {
+    display.drawStr(35, 10, "BOOT OKAY");
+    display.drawStr(28, 30, "PUSH GO BTN");
+    display.drawStr(38, 40, "TO START");
+
+  }
+  else {
+    display.drawStr(35, 10, "BOOT FAIL");
+
+    display.drawStr(10, 30, "SENSOR:");
+    display.drawStr(55, 30, sensors_failed_sensor());
+    display.drawStr(10, 40, "FAILED TO START");
+  }
+}
+
+void display_set_page(const Page new_page) {
+  currentPage = new_page;
+}

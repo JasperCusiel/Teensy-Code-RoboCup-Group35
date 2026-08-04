@@ -6,6 +6,15 @@
 #define ROBOCUP_DISPLAY_H
 #include <stdint.h>
 
+enum Page {
+  PAGE_MENU,
+  PAGE_VFH,
+  PAGE_DEBUG,
+  PAGE_ODOM,
+  PAGE_8X8_TOF,
+  PAGE_BOOT_STATUS
+};
+
 void display_init();
 void draw();
 void display_log(const char* msg);
@@ -16,5 +25,8 @@ void draw_odometry();
 bool read_button(uint8_t pin);
 void update_input();
 void draw_menu();
+void draw_boot_status();
+void display_set_page(Page new_page);
+
 
 #endif // ROBOCUP_DISPLAY_H
