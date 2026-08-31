@@ -13,13 +13,14 @@
 #include "odometry.h"
 #include "weight-detection.h"
 #include "sensors.h"
+#include "mapping.h"
 
 #include "scheduler.h"
 #define HZ_TO_US(x) (1000000UL / (x)) // convert hz to micro seconds
 #define NUM_TASKS (sizeof(tasks) / sizeof(tasks[0]))
 
 
-#define GO_BTN A6
+#define GO_BTN A9
 
 
 
@@ -31,9 +32,10 @@ task_t tasks[] = {
   { compute_vfh,  HZ_TO_US(10), 0 },
   { draw,   HZ_TO_US(5),  0 },
 { update_input,   HZ_TO_US(5),  0 },
-  // { get_tof_reading, HZ_TO_US(6),  0 },
+  { get_tof_reading, HZ_TO_US(6),  0 },
 //{ print_ekf_pose, HZ_TO_US(1),  0 },
-{ imu_get_reading, HZ_TO_US(95),  0 }
+{ imu_get_reading, HZ_TO_US(95),  0 },
+//{ mapping_task, HZ_TO_US(6),  0 }
 };
 
 
@@ -70,13 +72,10 @@ void setup() {
   Wire1.begin();
 
   display_init();
-
   sensors_init();
-
   vfh_init();
-  calculate_sector_indices();
-
   odometry_init();
+  mapping_init();
 
   // scanI2C();
 
@@ -86,11 +85,9 @@ void setup() {
   Serial.println("Push GO BTN to start");
   // Wait for GO button to be pushed to start program
   pinMode(GO_BTN, INPUT);
-  while (digitalRead(GO_BTN) == LOW) {
-    delay(50);
-  }
-  while (digitalRead(GO_BTN) == HIGH) {
-    delay(50);
+
+  while (read_button(GO_BTN)) {
+    delay(1);
   }
   Serial.println("Start");
 

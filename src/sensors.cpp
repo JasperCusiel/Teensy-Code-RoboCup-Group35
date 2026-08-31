@@ -20,7 +20,7 @@ static const char *failed_sensor = nullptr;
 
 
 sensor_t sensors[] = {
-  // {false, tof_init, "TOF ARRAY"},
+  {false, tof_init, "TOF ARRAY"},
   {false, smart_servo_init, "SERVOS"},
   {false, imu_init, "IMU"},
   {false, optical_flow_init, "OPT FLOW"},

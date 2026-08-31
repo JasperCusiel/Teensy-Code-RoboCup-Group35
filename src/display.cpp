@@ -11,16 +11,17 @@
 #include "weight-detection.h"
 #include "button.h"
 #include "sensors.h"
-
+#include "occupancy-grid.h"
 
 
 #include <Arduino.h>
 #include <Encoder.h>
 #include "U8g2lib.h"
 
-#define ENCODER_A A13
-#define ENCODER_B A12
-#define SW_PIN A11
+#define ENCODER_A A11
+#define ENCODER_B A1
+
+#define SW_PIN A7
 
 Encoder  input_encoder(ENCODER_A, ENCODER_B);
 
@@ -32,9 +33,10 @@ const char *menuItems[] = {
   "VFH",
   "Debug",
   "Odometry",
-  "8x8 ToF"
+  "8x8 ToF",
+  "Map"
 };
-#define MENU_ITEMS_COUNT 4
+#define MENU_ITEMS_COUNT 5
 
 
 Page currentPage = PAGE_DEBUG;
@@ -45,7 +47,7 @@ int32_t last_encoder_count = 0;
 #define HISTOGRAM_Y 63
 
 // static U8X8_SSD1306_128X64_NONAME_2ND_HW_I2C display(U8X8_PIN_NONE);
-static U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
+static U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
 #define MAX_LINES 7
 
 static char lines[MAX_LINES][17];
@@ -53,7 +55,7 @@ static uint8_t lineCount = 0;
 
 
 void update_input() {
-  int32_t delta = input_encoder.readAndReset() / 2;
+  int32_t delta = -(input_encoder.readAndReset() / 2);
 
   if (currentPage == PAGE_MENU) {
 
@@ -111,6 +113,7 @@ void draw() {
     case PAGE_DEBUG:   draw_debug(); break;
     case PAGE_8X8_TOF: draw_depth_data(display); break;
     case PAGE_BOOT_STATUS: draw_boot_status(); break;
+    case PAGE_MAP: draw_map(); break;
     }
 
   } while (display.nextPage());
@@ -276,4 +279,21 @@ void draw_boot_status() {
 
 void display_set_page(const Page new_page) {
   currentPage = new_page;
+}
+
+void draw_map() {
+  const int offset_x = 10;  // centre 30px wide map
+  const int offset_y = 7;   // centre 50px tall map
+  Serial.println("draw_map()");
+
+  for(int x = 0; x < MAP_WIDTH; x++)
+  {
+    for(int y = 0; y < MAP_HEIGHT; y++)
+    {
+      if(map_get_state(x, y) == OCCUPIED)
+      {
+        display.drawPixel(offset_x + x, offset_y + (MAP_HEIGHT - 1 - y)); // Flip Y axis
+      }
+    }
+  }
 }

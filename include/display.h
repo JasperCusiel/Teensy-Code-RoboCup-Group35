@@ -12,7 +12,8 @@ enum Page {
   PAGE_DEBUG,
   PAGE_ODOM,
   PAGE_8X8_TOF,
-  PAGE_BOOT_STATUS
+  PAGE_BOOT_STATUS,
+  PAGE_MAP
 };
 
 void display_init();
@@ -27,6 +28,7 @@ void update_input();
 void draw_menu();
 void draw_boot_status();
 void display_set_page(Page new_page);
+void draw_map();
 
 
 #endif // ROBOCUP_DISPLAY_H

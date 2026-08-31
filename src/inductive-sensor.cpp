@@ -5,7 +5,7 @@
 
 #include <core_pins.h>
 
-#define SENSE_PIN A0
+#define SENSE_PIN A8
 
 bool inductive_sensor_init() {
   pinMode(SENSE_PIN, INPUT);

@@ -28,5 +28,13 @@
 
 #define SECTOR_WIDTH ((FOV_MAX-FOV_MIN)/NUM_SECTORS)
 
+#define NUM_POINTS (NumOfTOFSensors * NumOfZonesPerSensor)
+
+// Sensor offsets
+#define TOF_ARRAY_OFFSET_X 0.1 // [m]
+#define TOF_ARRAY_OFFSET_Y 0 // [m]
+
+
+#define MAX_TOF_RANGE 1.3f // [m]]
 
 #endif // ROBOCUP_LIDAR_CONFIG_H

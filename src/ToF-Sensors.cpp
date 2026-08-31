@@ -45,7 +45,7 @@ char BigBuff[4000];
 char VL53L1X_BUFFER[60]; /* Create a buffer to get data */
 
 VL53L1X_ERROR error = 0;
-uint32_t i = 0;
+uint32_t idx = 0;
 uint8_t Zone, Sensor, Timeout;
 
 uint32_t TimeStart, TimeEnd, TotalTime, CurrentTime;
@@ -79,6 +79,8 @@ bool tof_init() {
     io.digitalWrite(xshutPins[i], LOW);
   }
   Serial.println("pins driven low");
+  calculate_sector_indices();
+  lidar_init_angles();
 
   return ResetAndInitializeAllSensors();  // true if all sensors started correctly
 }
@@ -101,7 +103,21 @@ void calculate_sector_indices() {
   }
 }
 
-void ResetAllSensors(void) {
+void lidar_init_angles()
+{
+  float angle_step =
+      (FOV_MAX - FOV_MIN) /
+      (NUM_POINTS - 1);
+
+
+  for(int i=0;i<NUM_POINTS;i++)
+  {
+    scan.angles[i] =
+        FOV_MIN + i*angle_step;
+  }
+}
+
+void ResetAllSensors() {
   // Disable/reset all sensors by driving their XSHUT pins low.
   for (uint8_t i = 0; i < NumOfTOFSensors; i++) {
     io.pinMode(xshutPins[i], OUTPUT);
@@ -232,7 +248,7 @@ void get_tof_reading() {
       WriteRegister8(Devs[Sensor], ROI_CONFIG__USER_ROI_CENTRE_SPAD,
                      zone_center[Zone + 1] - 0);
     }
-    i = i + 1;
+    idx = idx + 1;
     for (Sensor = 0; Sensor < NumOfTOFSensors; Sensor++) {
       error = VL53L1X_CheckForDataReady(Devs[Sensor], &Sensorcheck);
       while ((Sensorcheck == 0) && (Timeout == 0)) {

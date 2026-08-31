@@ -1,0 +1,8 @@
+//
+// Created by Jasper Cusiel on 07/08/2026.
+//
+
+#ifndef ROBOCUP_FRONTIER_DETECTION_H
+#define ROBOCUP_FRONTIER_DETECTION_H
+
+#endif // ROBOCUP_FRONTIER_DETECTION_H

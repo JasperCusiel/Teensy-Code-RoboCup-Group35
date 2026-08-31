@@ -92,7 +92,7 @@ void drawToF_dithered_fast(U8G2 &u8g2,
 
 
   // Calibration button
-  if (read_button(A6) == LOW) {
+  if (read_button(A9) == LOW) {
     u8g2.drawStr(70, 10, "Calibrating...");
     fill_calibration_matrix();
   }
