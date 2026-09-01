@@ -11,7 +11,7 @@ typedef struct {
   const char *name;
 } sensor_t;
 
-#define NUM_SENSORS 7
+#define NUM_SENSORS 8
 
 bool sensors_boot_okay();
 const char* sensors_failed_sensor();
