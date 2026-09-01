@@ -11,9 +11,9 @@
 #define SENSE_THRESHOLD 30
 
 
-int16_t buffer[3] = {0, 0, 0};
-uint8_t index = 0;
-int16_t average = 0;
+static int16_t buffer[3] = {0, 0, 0};
+static uint8_t buf_index = 0;
+static int16_t average = 0;
 
 
 bool ir_reflective_sensor_init() {
@@ -21,10 +21,10 @@ bool ir_reflective_sensor_init() {
     return true;
 }
 
-void update_average() {
-    buffer[index] = analogRead(SENSE_PIN);
+static void update_average() {
+    buffer[buf_index] = analogRead(SENSE_PIN);
     average = (buffer[0] + buffer[1] + buffer[2]) / 3;
-    index = (index + 1) % 3;
+    buf_index = (buf_index + 1) % 3;
 }
 
 
