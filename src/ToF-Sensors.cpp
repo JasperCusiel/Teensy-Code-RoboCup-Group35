@@ -15,7 +15,7 @@ extern "C" {
 // IO expander
 const byte SX1509_ADDRESS = 0x3F;
 SX1509 io; // Create an SX1509 object to be used throughout
-const uint8_t xshutPins[NumOfTOFSensors] = {0, 1, 2, 3, 4, 5};
+const uint8_t xshutPins[NumOfTOFSensors] = {5, 4, 3, 2, 1, 0};
 
 static lidar_scan scan;
 
