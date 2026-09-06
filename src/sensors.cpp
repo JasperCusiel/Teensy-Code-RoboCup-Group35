@@ -30,6 +30,7 @@ sensor_t sensors[] = {
   {false, limit_switches_init, "LIMIT SW'S"},
   {false, weight_detection_init, "8X8 TOF"},
   {false, ir_reflective_sensor_init, "REFLECTIVE"}
+  {false,  colour_sensor_init, "COLOR SENS"}
 // {false, lifter_motor_init, "LIFTER SERVOS"}
 };
 

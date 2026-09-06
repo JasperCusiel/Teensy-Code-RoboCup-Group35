@@ -15,7 +15,7 @@ extern "C" {
 // IO expander
 const byte SX1509_ADDRESS = 0x3F;
 SX1509 io; // Create an SX1509 object to be used throughout
-const uint8_t xshutPins[NumOfTOFSensors] = {0, 1, 2, 3, 4, 5};
+const uint8_t xshutPins[NumOfTOFSensors] = {5, 4, 3, 2, 1, 0};
 
 static lidar_scan scan;
 
@@ -252,7 +252,7 @@ void get_tof_reading() {
     for (Sensor = 0; Sensor < NumOfTOFSensors; Sensor++) {
       error = VL53L1X_CheckForDataReady(Devs[Sensor], &Sensorcheck);
       while ((Sensorcheck == 0) && (Timeout == 0)) {
-        delay(1);
+        // delay(1);
         CurrentTime = millis();
         if (CurrentTime >
             (TimeStart + (NumOfZonesPerSensor + 1) * TimingBudget * 2)) {
@@ -293,9 +293,9 @@ void get_tof_reading() {
     Timeout = 0;
     Serial.print("Reset Performed\n");
   } else {
-    delay(TimingBudget);
-    TimeEnd = millis();
-    TotalTime = (TimeEnd - TimeStart);
+    // delay(TimingBudget);
+    // TimeEnd = millis();
+    // TotalTime = (TimeEnd - TimeStart);
     // snprintf(BigBuff, sizeof(BigBuff), "Time: %ld\n", TotalTime);
     // Serial.print(BigBuff);
 

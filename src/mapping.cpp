@@ -8,9 +8,6 @@
 #include <math.h>
 
 
-float origin_x = -1.5f;  // [m]
-float origin_y = -1.0f; // [m]
-
 void mapping_init() {
   map_init();
 }
@@ -31,10 +28,10 @@ void update_map(pose_t pose, lidar_scan *scan) {
   // convert robot position to map coordinates
   int rx, ry;
   if (!world_to_map(pose.x, pose.y, &rx, &ry)) {
-    Serial.println("robot position to map coordinates failed");
+    // Serial.println("robot position to map coordinates failed");
     return;
   }
-  Serial.printf("rx: %d, ry: %d", rx, ry);
+  // Serial.printf("rx: %d, ry: %d", rx, ry);
 
   for(int i=0;i<NUM_POINTS;i++)
   {
@@ -42,29 +39,42 @@ void update_map(pose_t pose, lidar_scan *scan) {
 
     float theta = scan->angles[i];
 
+    if (!isfinite(r) || !isfinite(theta) || r <= 0.0f) {
+      continue;
+    }
+
+    bool obstacle_detected = r < MAX_TOF_RANGE;
+
+    // Limit maximum sensing distance
+    if (r > MAX_TOF_RANGE) {
+      r = MAX_TOF_RANGE;
+    }
+
     // Serial.printf("i=%d r=%.3f theta=%.3f\n", i, r, theta);
 
     float wx, wy; // World X, Y
     int mx, my; // Map X, Y
     lidar_to_world(r, theta, &pose, &wx, &wy);
-    Serial.printf("wx: %f, wy: %f\n", wx, wy);
+
 
 
     if (!world_to_map(wx,wy, &mx, &my)) {
+      // Serial.println("inserting ray failed");
       continue; // Skip inserting ray if not valid
     }
-    if (scan->ranges[i] >= MAX_TOF_RANGE) {
-      ray_cast(rx, ry, mx, my, map_update_free, nullptr);
-    } else {
+    if (obstacle_detected) {
       ray_cast(rx, ry, mx, my, map_update_free, map_update_occupied);
+    } else {
+      ray_cast(rx, ry, mx, my, map_update_free, nullptr);
     }
   }
 }
 
 void lidar_to_robot(float r, float theta, float *xr, float *yr) {
-  // Convert polar to cartesian in robot frame
-  *xr = r * cos(theta);
-  *yr = r * sin(theta);
+  // theta is a signed bearing from forward (+Y), CCW-positive. A point
+  // straight ahead therefore becomes (0, r) in the robot frame.
+  *xr = -r * sinf(theta);
+  *yr =  r * cosf(theta);
 
   // Add sensor offset
   *xr += TOF_ARRAY_OFFSET_X;
@@ -78,16 +88,16 @@ bool world_to_map(float xw, float yw, int *mx, int *my) {
    * ^
    * |
    * |---> X */
-
-  *mx = (int)floorf((xw - origin_x) / MAP_M_PER_CELL);
-  *my = (int)floorf((yw - origin_y) / MAP_M_PER_CELL);
+  // Serial.printf("xw: %f, yw: %f\n", xw, yw);
+  *mx = (int)floorf((xw - MAP_WORLD_MIN_X) * MAP_CELLS_PER_M);
+  *my = (int)floorf((yw - MAP_WORLD_MIN_Y) * MAP_CELLS_PER_M);
 
   // Check it's within bounds of the map
   if (*mx < 0 || *mx > (MAP_WIDTH - 1)||
         *my < 0 || *my > (MAP_HEIGHT - 1))
   {
-    Serial.println("Position out of map coordinates");
-    Serial.printf("mx: %d, my: %d\n", *mx, *my);
+    // Serial.println("Position out of map coordinates");
+    // Serial.printf("mx: %d, my: %d\n", *mx, *my);
     return false;
   }
 
@@ -98,11 +108,11 @@ bool world_to_map(float xw, float yw, int *mx, int *my) {
 void lidar_to_world(float r, float theta, const pose_t *pose, float *x, float *y) {
 
   float xr,yr;
-  lidar_to_robot(r, theta, &xr, &yr);
+  lidar_to_robot(r, theta, &xr, &yr); // Lidar to robot
 
   // Rotate into world
-  float xw = xr * cos(pose->theta) - yr * sin(pose->theta);
-  float yw = xr * sin(pose->theta) + yr * cos(pose->theta);
+  float xw = xr * cosf(pose->theta) - yr * sinf(pose->theta);
+  float yw = xr * sinf(pose->theta) + yr * cosf(pose->theta);
 
   // Translate to world
   xw += pose->x;

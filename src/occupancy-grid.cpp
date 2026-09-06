@@ -5,12 +5,6 @@
 #include <stddef.h>
 #include <math.h>
 
-#define LOG_ODDS_MIN -5.0f
-#define LOG_ODDS_MAX  5.0f
-
-#define LOG_ODDS_FREE -0.4f
-#define LOG_ODDS_OCC   0.85f
-
 float log_odds[MAP_WIDTH][MAP_HEIGHT];
 
 void map_init() {
@@ -25,14 +19,14 @@ void map_update_free(int x, int y) {
   // Check if in map bounds
   if(x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
 
-  log_odds[x][y] = clamp_log_odds(log_odds[x][y] + LOG_ODDS_FREE);
+  log_odds[x][y] = clamp_log_odds(log_odds[x][y] + MAP_LOG_ODDS_FREE);
 }
 
 void map_update_occupied(int x, int y) {
   // Check in map bounds
   if(x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
 
-  log_odds[x][y] = clamp_log_odds(log_odds[x][y] + LOG_ODDS_OCC);
+  log_odds[x][y] = clamp_log_odds(log_odds[x][y] + MAP_LOG_ODDS_OCC);
 }
 
 float map_get_probability(int x, int y) {
@@ -52,11 +46,11 @@ uint8_t map_get_state(int x, int y) {
 
 float clamp_log_odds(float value)
 {
-  if (value > LOG_ODDS_MAX)
-    return LOG_ODDS_MAX;
+  if (value > MAP_LOG_ODDS_MAX)
+    return MAP_LOG_ODDS_MAX;
 
-  if (value < LOG_ODDS_MIN)
-    return LOG_ODDS_MIN;
+  if (value < MAP_LOG_ODDS_MIN)
+    return MAP_LOG_ODDS_MIN;
 
   return value;
 }
