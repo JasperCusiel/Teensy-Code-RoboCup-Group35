@@ -3,15 +3,18 @@
 //
 
 #include <optical-flow.h>
+
+#include "imu.h"
+
 #include <Bitcraze_PMW3901.h>
 
 #define OPTICAL_FLOW_CS 10
 #define FLOW_SCALE 0.0209 // [rad/count] -> scale = FOV/resolution = 42 deg / 35 pix
-#define HEIGHT 0.08f // mounting height off floor [m]
+#define HEIGHT 0.09f // mounting height off floor [m]
 
 // Physical sensor offset from robot center.
-#define FLOW_OFFSET_X 0.05f    // [m]
-#define FLOW_OFFSET_Y 0.0f    // [m]
+#define FLOW_OFFSET_X 0.0f    // [m]
+#define FLOW_OFFSET_Y -0.150f    // [m]
 
 Bitcraze_PMW3901 flow(OPTICAL_FLOW_CS);
 
@@ -39,13 +42,20 @@ void flow_get_velocity(float *vx, float *vy, float dt) {
   float flow_rate_x = (float)dx / 385.0f; // proportional factor + convert from pixels to radians
   float flow_rate_y = (float)dy / 385.0f; // proportional factor + convert from pixels to radians
 
-  *vx = flow_rate_x / dt * HEIGHT;
+  // Robot frame:
+  // +X = right
+  // +Y = forward
+  // The PMW3901 is mounted 180 degrees from this frame.
+  *vx = -flow_rate_x / dt * HEIGHT;
   *vy = flow_rate_y / dt * HEIGHT;
+
+  // Serial.printf("raw_Vx = %f raw_Vy = %f gyro_z = %f\n", *vx , *vy, imu_get_gyro_z());
 }
 
 // Compensate for sensor offset
 void compensate_flow(float *vx, float *vy, float omega)
 {
-  *vx -= radians(omega) * FLOW_OFFSET_Y;
-  *vy += radians(omega) * FLOW_OFFSET_X;
+
+  *vx -= omega * FLOW_OFFSET_Y;
+  *vy += omega * FLOW_OFFSET_X;
 }
