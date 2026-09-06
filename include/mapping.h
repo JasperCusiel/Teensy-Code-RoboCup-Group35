@@ -14,6 +14,10 @@ typedef struct {
   float theta;
 }pose_t;
 
+// Lower-left world coordinate of the occupancy grid.
+#define MAP_WORLD_MIN_X (-0.5f)
+#define MAP_WORLD_MIN_Y (-0.5f)
+
 void mapping_init();
 void mapping_task();
 void update_map(pose_t pose, lidar_scan *scan);
