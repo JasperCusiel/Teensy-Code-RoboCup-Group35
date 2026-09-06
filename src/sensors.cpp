@@ -14,6 +14,7 @@
 #include "ToF-Sensors.h"
 #include "lift-motor.h"
 #include "display.h"
+#include "IR-reflective.h"
 
 static bool boot_okay = true;
 static const char *failed_sensor = nullptr;
@@ -28,6 +29,7 @@ sensor_t sensors[] = {
   {false, inductive_sensor_init, "INDUCTIVE"},
   {false, limit_switches_init, "LIMIT SW'S"},
   {false, weight_detection_init, "8X8 TOF"},
+  {false, ir_reflective_sensor_init, "REFLECTIVE"}
   {false,  colour_sensor_init, "COLOR SENS"}
 // {false, lifter_motor_init, "LIFTER SERVOS"}
 };
