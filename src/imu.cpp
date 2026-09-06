@@ -103,7 +103,7 @@ void imu_get_reading() {
   // - VECTOR_LINEARACCEL   - m/s^2
   // - VECTOR_GRAVITY       - m/s^2
   imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-  float heading = heading_offset - (float)radians(euler.x());
+  float heading = heading_offset - radians(euler.x());
 
   if (heading > PI)
     heading -= 2 * PI;
@@ -124,7 +124,7 @@ void imu_get_reading() {
       Adafruit_BNO055::VECTOR_GYROSCOPE
   );
 
-  data.gyro_z = (float)gyro.z();
+  data.gyro_z = radians((float)gyro.z());
 
   data.accel_x = (float)accel.x();
   data.accel_y = (float)accel.y();
@@ -136,6 +136,5 @@ float imu_get_heading() {
 }
 
 float imu_get_gyro_z() {
-  return data.gyro_z;
+  return -data.gyro_z;
 }
-
