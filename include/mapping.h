@@ -15,8 +15,8 @@ typedef struct {
 }pose_t;
 
 // Lower-left world coordinate of the occupancy grid.
-#define MAP_WORLD_MIN_X (-0.5f)
-#define MAP_WORLD_MIN_Y (-0.5f)
+#define MAP_WORLD_MIN_X (-0.1f)
+#define MAP_WORLD_MIN_Y (-0.1f)
 
 void mapping_init();
 void mapping_task();
