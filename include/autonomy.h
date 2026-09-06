@@ -5,10 +5,13 @@
 #ifndef ROBOCUP_AUTONOMY_H
 #define ROBOCUP_AUTONOMY_H
 
+// Starts autonomy task and sets safe output (stopped robot) until first planning cycle is complete.
 void autonomy_init();
-// Mission/planning/path-following/VFH task. Run at approximately 20 Hz.
+
+// Mission,planning,path-following and VFH checking task
 void autonomy_task();
-// Fast motor-control task. Run near the odometry rate (approximately 95 Hz).
+
+// Fast motion control update loop.
 void autonomy_motion_task();
 
 #endif // ROBOCUP_AUTONOMY_H
