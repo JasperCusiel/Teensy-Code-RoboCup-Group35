@@ -6,6 +6,7 @@
 #define ROBOCUP_BUTTIN_H
 #include <stdint.h>
 
+// Returns debounced button state
 bool read_button(uint8_t pin);
 
 #endif // ROBOCUP_BUTTIN_H
