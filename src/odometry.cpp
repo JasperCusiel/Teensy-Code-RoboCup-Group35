@@ -70,19 +70,22 @@ void update_F(float dt, float vx, float vy)
 
   memset(F, 0, sizeof(F));
 
-  F[0*EKF_N+0] = 1.0f;
-  F[0*EKF_N+2] = (-vx*s - vy*c) * dt;
-  F[0*EKF_N+3] = c * dt;
-  F[0*EKF_N+4] = -s * dt;
+  F[0*EKF_N + 0] = 1.0f;
+  F[0*EKF_N + 2] = (-vx*s - vy*c) * dt;
+  F[0*EKF_N + 3] = c * dt;
+  F[0*EKF_N + 4] = -s * dt;
 
-  F[1*EKF_N+1] = 1.0f;
-  F[1*EKF_N+2] = (vx*c - vy*s) * dt;
-  F[1*EKF_N+3] = s * dt;
-  F[1*EKF_N+4] = c * dt;
+  F[1*EKF_N + 1] = 1.0f;
+  F[1*EKF_N + 2] = (vx*c - vy*s) * dt;
+  F[1*EKF_N + 3] = s * dt;
+  F[1*EKF_N + 4] = c * dt;
 
-  F[2*EKF_N+2] = 1.0f;
-  F[3*EKF_N+3] = 1.0f;
-  F[4*EKF_N+4] = 1.0f;
+  // heading
+  F[2*EKF_N + 2] = 1.0f;
+
+  // velocity
+  F[3*EKF_N + 3] = 1.0f;
+  F[4*EKF_N + 4] = 1.0f;
 }
 
 
@@ -106,6 +109,10 @@ void odometry_update() {
   float s = sinf(theta);
 
   // Use STATE velocity for prediction
+  // +X = right
+  // +Y = forward
+  // +theta = counter-clockwise about +Z
+
   float vx_world = _ekf.x[3] * c - _ekf.x[4] * s;
   float vy_world = _ekf.x[3] * s + _ekf.x[4] * c;
 
@@ -164,4 +171,3 @@ void get_sensor_data(float* gyro_z, float* heading, float* vx_meas, float* vy_me
   *vx_meas = _sensor_data.vx_meas;
   *vy_meas = _sensor_data.vy_meas;
 }
-
