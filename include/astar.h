@@ -7,40 +7,37 @@
 #include "occupancy-grid.h"
 #include <stdint.h>
 
-typedef struct {
-  int x;
-  int y;
-
+typedef struct
+{
+    int x;
+    int y;
 } grid_point_t;
 
-typedef struct {
-  grid_point_t points[MAP_WIDTH * MAP_HEIGHT];
-  uint16_t length;
-
+typedef struct
+{
+    grid_point_t points[MAP_WIDTH * MAP_HEIGHT];
+    uint16_t length;
 } path_t;
 
-typedef struct {
-  int8_t x;
-  int8_t y;
+typedef struct
+{
+    // New cell to check
+    int8_t x;
+    int8_t y;
 
-  int8_t parent_x;
-  int8_t parent_y;
+    // Previous cell on the best route
+    int8_t parent_x;
+    int8_t parent_y;
 
-  float g_cost;
-  float h_cost;
-  float f_cost;
+    uint16_t g_cost; // Exact distance from start
+    uint16_t h_cost; // Estimated distance to the goal
+    uint16_t f_cost; // g_cost + h_cost
 
-  bool opened;
-  bool closed;
+    bool opened; // Discovered node
+    bool closed; // Already processed node
 } astar_node_t;
 
-inline bool operator<(const astar_node_t &lhs,
-                      const astar_node_t &rhs) { // We need to overload "<" to
-                                                 // put our struct into a set
-  return lhs.f_cost < rhs.f_cost;
-}
-
 void astar_init();
-bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t *path);
+bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* path);
 
 #endif // ROBOCUP_ASTAR_H
