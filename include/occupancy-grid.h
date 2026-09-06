@@ -12,20 +12,20 @@
 
 // Shared mapping evidence values. Telemetry sends these so the desktop viewer
 // reconstructs the same occupancy grid as the firmware.
-#define MAP_LOG_ODDS_MIN -5.0f
+#define MAP_LOG_ODDS_MIN (-5.0f)
 #define MAP_LOG_ODDS_MAX  5.0f
 #define MAP_LOG_ODDS_FREE (-0.4f)
 #define MAP_LOG_ODDS_OCC   0.85f
 
-#define MAP_WIDTH (int)(3.0f * MAP_CELLS_PER_M)
-#define MAP_HEIGHT (int)(5.0f * MAP_CELLS_PER_M)
+#define MAP_WIDTH (int8_t)(3.0f * MAP_CELLS_PER_M)
+#define MAP_HEIGHT (int8_t)(5.0f * MAP_CELLS_PER_M)
 
 
-
-enum occupancy_state_t {
-  UNKNOWN,
-  FREE,
-  OCCUPIED
+enum occupancy_state_t
+{
+    UNKNOWN,
+    FREE,
+    OCCUPIED
 };
 
 void map_init();
