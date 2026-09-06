@@ -14,7 +14,7 @@
 
 // Physical sensor offset from robot center.
 #define FLOW_OFFSET_X 0.0f    // [m]
-#define FLOW_OFFSET_Y -0.150f    // [m]
+#define FLOW_OFFSET_Y (-0.150f)    // [m]
 
 Bitcraze_PMW3901 flow(OPTICAL_FLOW_CS);
 
@@ -56,6 +56,6 @@ void flow_get_velocity(float *vx, float *vy, float dt) {
 void compensate_flow(float *vx, float *vy, float omega)
 {
 
-  *vx -= omega * FLOW_OFFSET_Y;
-  *vy += omega * FLOW_OFFSET_X;
+  *vx += omega * FLOW_OFFSET_Y;
+  *vy -= omega * FLOW_OFFSET_X;
 }
