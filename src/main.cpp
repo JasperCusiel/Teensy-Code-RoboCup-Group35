@@ -50,34 +50,6 @@ task_t tasks[] = {
 };
 
 
-void scanI2C() {
-  display_log("Scanning I2C bus...");
-
-  uint8_t count = 0;
-  char buffer[18];
-
-  for (uint8_t addr = 0x03; addr < 0x78; addr++) {
-    Wire1.beginTransmission(addr);
-    uint8_t error = Wire1.endTransmission();
-
-    if (error == 0) {
-      snprintf(buffer, sizeof(buffer), "0x%02X found", addr);
-      display_log(buffer);
-      delay(150);
-      count++;
-    }
-  }
-
-  if (count == 0)
-    display_log("No I2C devices");
-  else {
-    snprintf(buffer, sizeof(buffer), "%d devices found", count);
-    display_log(buffer);
-  }
-}
-
-
-
 void setup() {
   Serial.begin(115200);
   Wire.begin();
@@ -100,10 +72,6 @@ void setup() {
     Serial.println("BLUE");
   }
 
-  // scanI2C();
-
-  // Calibration
-  //get_ToFCalibration();
 
   FastLED.addLeds<WS2812,DATA_PIN,RGB>(leds,NUM_LEDS);
   FastLED.setBrightness(128);
