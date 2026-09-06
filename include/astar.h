@@ -41,9 +41,6 @@ inline bool operator<(const astar_node_t &lhs,
 }
 
 void astar_init();
-static bool is_valid(int x, int y);
-static float heuristic(int x1, int y1, int x2, int y2);
-static void make_path(int goal_x, int goal_y, path_t *path);
 bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t *path);
 
 #endif // ROBOCUP_ASTAR_H
