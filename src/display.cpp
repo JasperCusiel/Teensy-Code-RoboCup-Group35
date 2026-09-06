@@ -12,6 +12,7 @@
 #include "button.h"
 #include "sensors.h"
 #include "occupancy-grid.h"
+#include "mapping.h"
 
 
 #include <Arduino.h>
@@ -112,8 +113,8 @@ void draw() {
     case PAGE_ODOM: draw_odometry(); break;
     case PAGE_DEBUG:   draw_debug(); break;
     case PAGE_8X8_TOF: draw_depth_data(display); break;
-    case PAGE_BOOT_STATUS: draw_boot_status(); break;
     case PAGE_MAP: draw_map(); break;
+    case PAGE_BOOT_STATUS: draw_boot_status(); break;
     }
 
   } while (display.nextPage());
@@ -190,6 +191,30 @@ void draw_angle_arrow(float angle, uint8_t radius)
   display.drawLine(x1, y1, xb, yb);
 }
 
+void draw_robot_arrow(int cx, int cy, float angle, uint8_t length)
+{
+  // Screen Y increases downward. Robot forward (+Y) in the world frame is
+  // (-sin(theta), cos(theta)) when theta is positive CCW.
+  int x1 = cx - sinf(angle) * length;
+  int y1 = cy - cosf(angle) * length;
+
+  // Draw main arrow shaft
+  display.drawLine(cx, cy, x1, y1);
+
+  // Arrow head
+  float head_angle = 0.5f;
+  uint8_t head_length = 4;
+
+  int xa = x1 + sinf(angle + head_angle) * head_length;
+  int ya = y1 + cosf(angle + head_angle) * head_length;
+
+  int xb = x1 + sinf(angle - head_angle) * head_length;
+  int yb = y1 + cosf(angle - head_angle) * head_length;
+
+  display.drawLine(x1, y1, xa, ya);
+  display.drawLine(x1, y1, xb, yb);
+}
+
 void draw_vfh(const float* histogram) {
 
   uint8_t min_radius = 10;
@@ -255,7 +280,7 @@ void draw_odometry() {
   snprintf(buf, sizeof(buf), "vX:%5.2f", vx);
   display.drawStr(0, 60, buf);
 
-  snprintf(buf, sizeof(buf), "vY:%5.2f", vx);
+  snprintf(buf, sizeof(buf), "vY:%5.2f", vy);
   display.drawStr(64, 60, buf);
 
 }
@@ -284,7 +309,18 @@ void display_set_page(const Page new_page) {
 void draw_map() {
   const int offset_x = 10;  // centre 30px wide map
   const int offset_y = 7;   // centre 50px tall map
-  Serial.println("draw_map()");
+
+  display.drawFrame(offset_x - 1, offset_y - 1, MAP_WIDTH, MAP_HEIGHT);
+
+  pose_t current_pose;
+  get_ekf_pose(&current_pose.x, &current_pose.y, &current_pose.theta);
+
+  int rx, ry;
+  if (!world_to_map(current_pose.x, current_pose.y, &rx, &ry)) {
+    Serial.println("robot position to map coordinates failed");
+    return;
+  }
+  draw_robot_arrow(offset_x + rx, offset_y + (MAP_HEIGHT - 1 - ry), current_pose.theta, 10);
 
   for(int x = 0; x < MAP_WIDTH; x++)
   {
