@@ -5,8 +5,19 @@
 #define EKF_N 5
 #define EKF_M 3
 
+#define BLUE_BASE_X 2.8f
+#define GREEN_BASE_X 0.2f
+#define BASE_Y  0.2f
+
+#define X 0
+#define Y 1
+#define THETA 2
+#define BODY_VX 3
+#define BODY_VY 4
+
 #define ODOM_FREQ 95
-#define DT (1.0f/ ODOM_FREQ)
+#define NOMINAL_DT (1.0f / ODOM_FREQ)
+#define MIN_ODOM_DT (0.5f * NOMINAL_DT)
 
 #include "odometry.h"
 #include "fl/math_macros.h"
@@ -14,6 +25,7 @@
 #include "optical-flow.h"
 #include "tinyekf.h"
 #include <arduino.h>
+#include "colour-sensor.h"
 
 
 // Proccess noise covariance
@@ -50,6 +62,7 @@ static const float H[EKF_M*EKF_N] = {
 
 static ekf_t _ekf;
 static sensor_data _sensor_data;
+static uint32_t _last_update_us = 0;
 
 
 void odometry_init() {
@@ -58,13 +71,22 @@ void odometry_init() {
   const float Pdiag[EKF_N] = {
     1, 1, 0.5, 1, 1};
   ekf_initialize(&_ekf, Pdiag);
+  float initial_x = (get_base_color() == COLOR_GREEN) ? GREEN_BASE_X : BLUE_BASE_X;
+  float initial_theta = 0;
+  _ekf.x[X] = initial_x;
+  _ekf.x[Y] = BASE_Y;
+  _ekf.x[THETA] = initial_theta;
+  _ekf.x[BODY_VX] = 0.0f;
+  _ekf.x[BODY_VY] = 0.0f;
+  _last_update_us = 0;
+
 }
 
 
 
 void update_F(float dt, float vx, float vy)
 {
-  float theta = _ekf.x[2];
+  float theta = _ekf.x[THETA];
   float c = cosf(theta);
   float s = sinf(theta);
 
@@ -90,11 +112,28 @@ void update_F(float dt, float vx, float vy)
 
 
 void odometry_update() {
+  // Use the interval between optical-flow reads rather than DT
+  if (_last_update_us == 0) {
+    float discarded_vx, discarded_vy;
+    flow_get_velocity(&discarded_vx, &discarded_vy, NOMINAL_DT);
+    _last_update_us = micros();
+    return;
+  }
+
+  const uint32_t now_us = micros();
+  const float dt = static_cast<uint32_t>(now_us - _last_update_us) * 1.0e-6f;
+
+  // Avoids dividing by tiny count if scheduler overrun happens
+  if (dt < MIN_ODOM_DT) {
+    return;
+  }
+  _last_update_us = now_us;
+
   float gyro_z = imu_get_gyro_z();
   float heading = imu_get_heading();
 
   float vx_meas, vy_meas;
-  flow_get_velocity(&vx_meas, &vy_meas, DT);
+  flow_get_velocity(&vx_meas, &vy_meas, dt);
 
 
   _sensor_data.gyro_z = gyro_z;
@@ -104,7 +143,7 @@ void odometry_update() {
 
   compensate_flow(&vx_meas, &vy_meas, gyro_z);
 
-  float theta = _ekf.x[2];
+  float theta = _ekf.x[THETA];
   float c = cosf(theta);
   float s = sinf(theta);
 
@@ -113,24 +152,24 @@ void odometry_update() {
   // +Y = forward
   // +theta = counter-clockwise about +Z
 
-  float vx_world = _ekf.x[3] * c - _ekf.x[4] * s;
-  float vy_world = _ekf.x[3] * s + _ekf.x[4] * c;
+  float vx_world = _ekf.x[BODY_VX] * c - _ekf.x[BODY_VY] * s;
+  float vy_world = _ekf.x[BODY_VX] * s + _ekf.x[BODY_VY] * c;
 
-  float predicted_heading = theta + gyro_z * DT;
+  float predicted_heading = theta + gyro_z * dt;
 
   // Wrap
   while (predicted_heading > PI) predicted_heading -= 2 * PI;
   while (predicted_heading < -PI) predicted_heading += 2 * PI;
 
   float fx[EKF_N] = {
-    _ekf.x[0] + vx_world * DT,
-    _ekf.x[1] + vy_world * DT,
+    _ekf.x[X] + vx_world * dt,
+    _ekf.x[Y] + vy_world * dt,
     predicted_heading,
-    _ekf.x[3],
-    _ekf.x[4]
+    _ekf.x[BODY_VX],
+    _ekf.x[BODY_VY]
   };
 
-  update_F(DT, _ekf.x[3], _ekf.x[4]);
+  update_F(dt, _ekf.x[BODY_VX], _ekf.x[BODY_VY]);
   ekf_predict(&_ekf, fx, F, Q);
 
   // Wrap heading measurement
@@ -141,9 +180,9 @@ void odometry_update() {
   float wrapped_heading = _ekf.x[2] + heading_error;
 
   float hx[EKF_M] = {
-    _ekf.x[3],
-    _ekf.x[4],
-    _ekf.x[2]
+    _ekf.x[BODY_VX],
+    _ekf.x[BODY_VY],
+    _ekf.x[THETA]
   };
 
   float z[EKF_M] = {
@@ -156,13 +195,13 @@ void odometry_update() {
 }
 
 void print_ekf_pose() {
-  Serial.printf("x=%.2f y=%.2f heading=%.2f\n", _ekf.x[0], _ekf.x[1], degrees(_ekf.x[2]));
+  Serial.printf("x=%.2f y=%.2f heading=%.2f\n", _ekf.x[X], _ekf.x[Y], degrees(_ekf.x[THETA]));
 }
 
 void get_ekf_pose(float *x, float* y, float* theta) {
-  *x = _ekf.x[0];
-  *y = _ekf.x[1];
-  *theta = _ekf.x[2];
+  *x = _ekf.x[X];
+  *y = _ekf.x[Y];
+  *theta = _ekf.x[THETA];
 }
 
 void get_sensor_data(float* gyro_z, float* heading, float* vx_meas, float* vy_meas) {
