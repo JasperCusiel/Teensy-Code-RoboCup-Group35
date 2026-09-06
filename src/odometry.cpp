@@ -26,6 +26,7 @@
 #include "tinyekf.h"
 #include <arduino.h>
 #include "colour-sensor.h"
+#include "navigation.h"
 
 
 // Proccess noise covariance
@@ -73,6 +74,7 @@ void odometry_init() {
   ekf_initialize(&_ekf, Pdiag);
   float initial_x = (get_base_color() == COLOR_GREEN) ? GREEN_BASE_X : BLUE_BASE_X;
   float initial_theta = 0;
+  navigation_set_base(initial_x, BASE_Y);
   _ekf.x[X] = initial_x;
   _ekf.x[Y] = BASE_Y;
   _ekf.x[THETA] = initial_theta;
