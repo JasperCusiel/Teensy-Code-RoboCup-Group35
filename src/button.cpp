@@ -4,7 +4,7 @@
 #include "button.h"
 #include <arduino.h>
 
-#define DEBOUNCE_TIME_MS 20
+#define DEBOUNCE_TIME_MS 10
 
 bool read_button(uint8_t pin) {
   static uint32_t lastChange = 0;
