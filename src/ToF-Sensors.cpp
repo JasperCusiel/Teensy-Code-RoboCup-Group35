@@ -252,7 +252,7 @@ void get_tof_reading() {
     for (Sensor = 0; Sensor < NumOfTOFSensors; Sensor++) {
       error = VL53L1X_CheckForDataReady(Devs[Sensor], &Sensorcheck);
       while ((Sensorcheck == 0) && (Timeout == 0)) {
-        delay(1);
+        // delay(1);
         CurrentTime = millis();
         if (CurrentTime >
             (TimeStart + (NumOfZonesPerSensor + 1) * TimingBudget * 2)) {
@@ -293,9 +293,9 @@ void get_tof_reading() {
     Timeout = 0;
     Serial.print("Reset Performed\n");
   } else {
-    delay(TimingBudget);
-    TimeEnd = millis();
-    TotalTime = (TimeEnd - TimeStart);
+    // delay(TimingBudget);
+    // TimeEnd = millis();
+    // TotalTime = (TimeEnd - TimeStart);
     // snprintf(BigBuff, sizeof(BigBuff), "Time: %ld\n", TotalTime);
     // Serial.print(BigBuff);
 
