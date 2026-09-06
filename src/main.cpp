@@ -86,7 +86,6 @@ void setup() {
   display_init();
   sensors_init();
   vfh_init();
-  colour_sensor_init();
   odometry_init();
   mapping_init();
   telemetry_init();
