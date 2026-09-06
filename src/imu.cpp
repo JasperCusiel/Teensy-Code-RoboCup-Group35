@@ -136,5 +136,5 @@ float imu_get_heading() {
 }
 
 float imu_get_gyro_z() {
-  return -data.gyro_z;
+  return data.gyro_z;
 }
