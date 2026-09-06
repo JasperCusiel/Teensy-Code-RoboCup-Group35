@@ -10,6 +10,13 @@
 #define MAP_CELLS_PER_M 10.0f
 #define MAP_M_PER_CELL (float)(1.0f /MAP_CELLS_PER_M)
 
+// Shared mapping evidence values. Telemetry sends these so the desktop viewer
+// reconstructs the same occupancy grid as the firmware.
+#define MAP_LOG_ODDS_MIN -5.0f
+#define MAP_LOG_ODDS_MAX  5.0f
+#define MAP_LOG_ODDS_FREE (-0.4f)
+#define MAP_LOG_ODDS_OCC   0.85f
+
 #define MAP_WIDTH (int)(3.0f * MAP_CELLS_PER_M)
 #define MAP_HEIGHT (int)(5.0f * MAP_CELLS_PER_M)
 
