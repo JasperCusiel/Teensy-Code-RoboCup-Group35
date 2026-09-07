@@ -5,6 +5,7 @@
 #ifndef ROBOCUP_INDUCTIVE_SENSOR_H
 #define ROBOCUP_INDUCTIVE_SENSOR_H
 
+// Initialize inductive sensor
 bool inductive_sensor_init();
 
 #endif // ROBOCUP_INDUCTIVE_SENSOR_H
