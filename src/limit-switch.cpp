@@ -3,7 +3,9 @@
 //
 
 #include "limit-switch.h"
+#include <Wire.h>   // SparkFunSX1509.h does not include this for some reason?
 #include <SparkFunSX1509.h>
+
 
 #define DEBOUNCE_TIME_MS 10 // How long to debounce switches
 
