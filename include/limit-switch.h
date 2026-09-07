@@ -5,10 +5,12 @@
 #ifndef ROBOCUP_LIMIT_SWITCH_H
 #define ROBOCUP_LIMIT_SWITCH_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
+// Initialize limit switches on SX1509 IO expander
 bool limit_switches_init();
-bool readLimitSwitch(uint8_t pin);
+
+// Read limit switch state (with debouncing)
+bool read_limit_switch(uint8_t pin);
 
 #endif // ROBOCUP_LIMIT_SWITCH_H
