@@ -5,18 +5,27 @@
 #ifndef ROBOCUP_IMU_H
 #define ROBOCUP_IMU_H
 
-#include <stdbool.h>
-bool imu_init();
-void displaySensorDetails(void);
-void displaySensorStatus(void);
-
-struct imu_data {
-  float heading;
-  float gyro_z;
-  float accel_x;
-  float accel_y;
+// Used to store the imu data
+struct imu_data
+{
+    double heading;
+    double gyro_z;
+    double accel_x;
+    double accel_y;
 };
-void imu_get_reading();
-float imu_get_heading();
-float imu_get_gyro_z();
+
+// Starts imu and ensure fusion starts and no errors occur, returns true if start okay, false if not.
+bool imu_init();
+
+// From Adafruit library documentation, used for debugging.
+void displaySensorDetails();
+void displaySensorStatus();
+
+// Task to sample the imu for new data
+void imu_task();
+
+// Getter functions to expose imu data
+double imu_get_heading();
+double imu_get_gyro_z();
+
 #endif // ROBOCUP_IMU_H
