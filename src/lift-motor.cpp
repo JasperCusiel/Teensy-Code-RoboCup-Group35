@@ -81,51 +81,51 @@ namespace
         Motor2Callbacks::brake,
         Motor2Callbacks::readEncoder,
         Motor2Callbacks::writeEncoder);
-}
 
-static bool home_servo(DCMotorServo* servo)
-{
-    // Function homes the lifter motor by first backing off, fast homing, backing off then slow homing (much like a 3D printer or cnc).
-
-    // Move away from limit switch first
-    servo->setCurrentPosition(0);
-    servo->moveTo(-LIMIT_SWITCH_BACK_OFF);
-
-    while (!servo->finished())
+    bool home_servo(DCMotorServo* servo)
     {
-        servo->run();
+        // Function homes the lifter motor by first backing off, fast homing, backing off then slow homing (much like a 3D printer or cnc).
+
+        // Move away from limit switch first
+        servo->setCurrentPosition(0);
+        servo->moveTo(-LIMIT_SWITCH_BACK_OFF);
+
+        while (!servo->finished())
+        {
+            servo->run();
+        }
+
+        // First fast homing
+        servo->startHoming(1, HOMING_SPEED, MAX_TRAVEL_ENC_COUNT);
+
+        while (servo->isHoming())
+        {
+            servo->run();
+        }
+        // Back off from switch
+        servo->moveTo(-LIMIT_SWITCH_BACK_OFF);
+
+        while (!servo->finished())
+        {
+            servo->run();
+        }
+
+        // Slow homing
+        servo->startHoming(1, 100, MAX_TRAVEL_ENC_COUNT);
+
+        while (servo->isHoming())
+        {
+            servo->run();
+        }
+
+        if (servo->isHomed())
+        {
+            servo->setTravelLimits(0, MAX_TRAVEL_ENC_COUNT);
+            return true;
+        }
+
+        return false;
     }
-
-    // First fast homing
-    servo->startHoming(1, HOMING_SPEED, MAX_TRAVEL_ENC_COUNT);
-
-    while (servo->isHoming())
-    {
-        servo->run();
-    }
-    // Back off from switch
-    servo->moveTo(-LIMIT_SWITCH_BACK_OFF);
-
-    while (!servo->finished())
-    {
-        servo->run();
-    }
-
-    // Slow homing
-    servo->startHoming(1, 100, MAX_TRAVEL_ENC_COUNT);
-
-    while (servo->isHoming())
-    {
-        servo->run();
-    }
-
-    if (servo->isHomed())
-    {
-        servo->setTravelLimits(0, MAX_TRAVEL_ENC_COUNT);
-        return true;
-    }
-
-    return false;
 }
 
 
