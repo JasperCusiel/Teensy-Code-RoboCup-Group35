@@ -83,7 +83,7 @@ namespace
         Motor2Callbacks::writeEncoder);
 }
 
-bool home_servo(DCMotorServo* servo)
+static bool home_servo(DCMotorServo* servo)
 {
     // Function homes the lifter motor by first backing off, fast homing, backing off then slow homing (much like a 3D printer or cnc).
 
