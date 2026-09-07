@@ -7,7 +7,7 @@
 
 void drivetrain_init();
 
-// Set normalized motor effort. Values outside [-1, 1] are clamped.
+// Set normalized motor speeds, values outside [-1,1] are clamped. -1 = full reverse, 1=full foward.
 void set_motor_speeds(float left, float right);
 
 #endif // ROBOCUP_DRIVETRAIN_H
