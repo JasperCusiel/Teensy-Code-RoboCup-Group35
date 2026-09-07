@@ -4,21 +4,12 @@
 
 #ifndef ROBOCUP_LIFT_MOTOR_H
 #define ROBOCUP_LIFT_MOTOR_H
-
 #include <DCMotorServo.h>
-#include <Servo.h>
-#include <Encoder.h>
 
+// Initializes motor drive, encoders, and homes both lifter motors sequentially.
 bool lifter_motor_init();
-bool home_servo(DCMotorServo *servo);
 
-void pwm_skip_tuning(Servo *motor, uint8_t pwm_pin, Encoder *encoder, void (*motorBreak)(), void (*motorWrite)(int16_t s));
-void serialPrintPWMSkipResults();
-
-
-void serialPrintAccuracyResults();
-void accuracy_estimate_tuning();
-
-void pid_tuning();
+// Homes servo by backing off, performing a fast then slow homing sequence.
+bool home_servo(DCMotorServo* servo);
 
 #endif // ROBOCUP_LIFT_MOTOR_H
