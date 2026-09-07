@@ -58,7 +58,7 @@ namespace
     template <uint8_t Pin>
     bool readEndstop()
     {
-        return readLimitSwitch(Pin);
+        return read_limit_switch(Pin);
     }
 
     // Motor drives are PPM controlled (thus the Servo library generates pulses).
