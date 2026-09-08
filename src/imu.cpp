@@ -122,7 +122,7 @@ void imu_task()
         heading += 2 * PI;
 
     // Store heading
-    data.heading = heading;
+    data.heading = (float)heading;
 
     // linear acceleration (not currently used in EKF)
     imu::Vector<3> accel = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
@@ -132,17 +132,17 @@ void imu_task()
 
     // Store data
     data.gyro_z = radians(gyro.z()); // Default is degrees, radians used throughout this project
-    data.accel_x = accel.x();
-    data.accel_y = accel.y();
+    data.accel_x = (float)accel.x();
+    data.accel_y = (float)accel.y();
 }
 
 // Expose heading and gyro data for other modules.
-double imu_get_heading()
+float imu_get_heading()
 {
     return data.heading;
 }
 
-double imu_get_gyro_z()
+float imu_get_gyro_z()
 {
     return data.gyro_z;
 }
