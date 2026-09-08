@@ -5,8 +5,8 @@
 #ifndef ROBOCUP_MOTION_CONTROLLER_H
 #define ROBOCUP_MOTION_CONTROLLER_H
 
-#include "mapping.h"
 #include "navigation-types.h"
+#include "odometry.h"
 
 // Motor outputs are normalized efforts in the range [-1, 1].
 typedef void (*drive_output_callback_t)(float left_output,
@@ -16,8 +16,8 @@ void motion_controller_init();
 void motion_controller_stop();
 
 void motion_controller_update(
-    const pose_t *pose,
-    const velocity_command_t *command);
+    const pose_t* pose,
+    const velocity_command_t* command);
 
 void motion_controller_set_enabled(bool enabled);
 void motion_controller_set_output_callback(drive_output_callback_t callback);
@@ -33,9 +33,6 @@ void motion_controller_apply_motor_output(
     float left_output,
     float right_output);
 
-void motion_controller_get_wheel_targets(float *left_speed,
-                                         float *right_speed);
-void motion_controller_get_outputs(float *left_output, float *right_output);
-bool robot_is_stopped();
+void motion_controller_get_outputs(float* left_output, float* right_output);
 
 #endif // ROBOCUP_MOTION_CONTROLLER_H
