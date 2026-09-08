@@ -5,24 +5,17 @@
 #ifndef ROBOCUP_MAPPING_H
 #define ROBOCUP_MAPPING_H
 
-#include "ToF-Sensors.h"
-#include "odometry.h"
-
-typedef struct {
-  float x;
-  float y;
-  float theta;
-}pose_t;
-
 // Lower-left world coordinate of the occupancy grid.
 #define MAP_WORLD_MIN_X (-0.1f)
 #define MAP_WORLD_MIN_Y (-0.1f)
 
+// Generates occupancy map.
 void mapping_init();
-void mapping_task();
-void update_map(pose_t pose, lidar_scan *scan);
-bool world_to_map(float xw, float yw, int *mx, int *my);
-void lidar_to_world(float r, float theta, const pose_t *pose, float *x, float *y);
 
+// Call periodically, gets EKF pose and inserts lidar scan into map.
+void mapping_task();
+
+// Convert world point to map coordinates.
+bool world_to_map(float world_x, float world_y, int* map_x, int* map_y);
 
 #endif // ROBOCUP_MAPPING_H
