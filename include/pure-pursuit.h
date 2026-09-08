@@ -5,19 +5,13 @@
 #ifndef ROBOCUP_PURE_PURSUIT_H
 #define ROBOCUP_PURE_PURSUIT_H
 
-#include "mapping.h"
 #include "navigation-types.h"
+#include "odometry.h"
 
-void pure_pursuit_init();
+// Generate new velocity command based on robot position along path.
+velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_pose);
 
-velocity_command_t pure_pursuit_update(
-    const path_t *path,
-    const pose_t *robot_pose);
-
-bool pure_pursuit_path_complete(
-    const path_t *path,
-    const pose_t *robot_pose);
-
-void pure_pursuit_reset();
+// Mark path complete when we are within a tolerance of the final path point.
+bool pure_pursuit_path_complete(const path_t* path, const pose_t* robot_pose);
 
 #endif // ROBOCUP_PURE_PURSUIT_H
