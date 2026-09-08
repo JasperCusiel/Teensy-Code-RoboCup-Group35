@@ -16,51 +16,57 @@
 #include "display.h"
 #include "IR-reflective.h"
 
-static bool boot_okay = true;
-static const char *failed_sensor = nullptr;
+// This module starts all the sensors and displays the boot status to the display module.
+// It tracks which sensor failed to show the user.
 
+static bool boot_okay = true;
+static const char* failed_sensor = nullptr;
 
 sensor_t sensors[] = {
-  {false, tof_init, "TOF ARRAY"},
-  {false, smart_servo_init, "SERVOS"},
-  {false, imu_init, "IMU"},
-  {false, optical_flow_init, "OPT FLOW"},
-  {false, colour_sensor_init, "COLOUR"},
-  {false, inductive_sensor_init, "INDUCTIVE"},
-  {false, limit_switches_init, "LIMIT SW'S"},
-  {false, weight_detection_init, "8X8 TOF"},
-  {false, ir_reflective_sensor_init, "REFLECTIVE"},
-  {false,  colour_sensor_init, "COLOR SENS"}
-// {false, lifter_motor_init, "LIFTER SERVOS"}
+    {false, tof_init, "TOF ARRAY"},
+    {false, smart_servo_init, "SERVOS"},
+    {false, imu_init, "IMU"},
+    {false, optical_flow_init, "OPT FLOW"},
+    {false, colour_sensor_init, "COLOUR"},
+    {false, inductive_sensor_init, "INDUCTIVE"},
+    {false, limit_switches_init, "LIMIT SW'S"},
+    {false, weight_detection_init, "8X8 TOF"},
+    {false, ir_reflective_sensor_init, "REFLECTIVE"},
+    {false, colour_sensor_init, "COLOR SENS"}
+    // {false, lifter_motor_init, "LIFTER SERVOS"}
 };
 
-void sensors_init() {
-  boot_okay = true;
-  failed_sensor = nullptr;
+void sensors_init()
+{
+    boot_okay = true;
+    failed_sensor = nullptr;
 
-  for (size_t i = 0; i < NUM_SENSORS; i++) {
+    for (size_t i = 0; i < NUM_SENSORS; i++)
+    {
+        bool status = sensors[i].init_func();
+        sensors[i].boot_okay = status;
 
-    bool status = sensors[i].init_func();
-    sensors[i].boot_okay = status;
+        if (!status && boot_okay)
+        {
+            boot_okay = false;
+            failed_sensor = sensors[i].name;
+        }
 
-    if (!status && boot_okay) {
-      boot_okay = false;
-      failed_sensor = sensors[i].name;
+        display_log_status(sensors[i].name, status);
     }
-
-    display_log_status(sensors[i].name, status);
-  }
-  display_set_page(PAGE_BOOT_STATUS);
-  draw();
-  delay(2000);
-  display_set_page(PAGE_MENU);
+    display_set_page(PAGE_BOOT_STATUS);
+    display_draw();
+    delay(2000);
+    display_set_page(PAGE_MENU);
 }
 
-bool sensors_boot_okay() {
-  return boot_okay;
+bool sensors_boot_okay()
+{
+    return boot_okay;
 }
 
 
-const char* sensors_failed_sensor() {
-  return failed_sensor;
+const char* sensors_failed_sensor()
+{
+    return failed_sensor;
 }
