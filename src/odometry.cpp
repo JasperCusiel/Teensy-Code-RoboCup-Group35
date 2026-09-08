@@ -123,7 +123,7 @@ void odometry_update()
     // Use the interval between optical-flow reads rather than DT
     if (last_update_us == 0)
     {
-        double discarded_vx, discarded_vy;
+        float discarded_vx, discarded_vy;
         flow_get_velocity(&discarded_vx, &discarded_vy, NOMINAL_DT);
         last_update_us = micros();
         return;
@@ -140,10 +140,10 @@ void odometry_update()
     last_update_us = now_us;
 
     // Get latest sensor data
-    double gyro_z = imu_get_gyro_z();
-    double heading = imu_get_heading();
+    float gyro_z = imu_get_gyro_z();
+    float heading = imu_get_heading();
 
-    double vx_meas, vy_meas;
+    float vx_meas, vy_meas;
     flow_get_velocity(&vx_meas, &vy_meas, dt);
 
     // Store to allow other modules to access via getter functions.
@@ -210,7 +210,7 @@ void get_ekf_pose(float* x, float* y, float* theta)
     *theta = ekf.x[THETA];
 }
 
-void get_sensor_data(double* gyro_z, double* heading, double* vx_meas, double* vy_meas)
+void get_sensor_data(float* gyro_z, float* heading, float* vx_meas, float* vy_meas)
 {
     *gyro_z = sensor_data.gyro_z;
     *heading = sensor_data.heading;
@@ -218,7 +218,7 @@ void get_sensor_data(double* gyro_z, double* heading, double* vx_meas, double* v
     *vy_meas = sensor_data.vy_meas;
 }
 
-double get_vy()
+float get_vy()
 {
     return sensor_data.vy_meas;
 }

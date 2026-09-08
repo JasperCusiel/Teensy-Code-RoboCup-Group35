@@ -7,10 +7,10 @@
 
 typedef struct
 {
-    double gyro_z;
-    double heading;
-    double vx_meas;
-    double vy_meas;
+    float gyro_z;
+    float heading;
+    float vx_meas;
+    float vy_meas;
 } sensor_data_t;
 
 typedef struct
@@ -28,7 +28,7 @@ void odometry_update();
 
 // Getter functions
 void get_ekf_pose(float* x, float* y, float* theta);
-void get_sensor_data(double* gyro_z, double* heading, double* vx_meas, double* vy_meas);
-double get_vy();
+void get_sensor_data(float* gyro_z, float* heading, float* vx_meas, float* vy_meas);
+float get_vy();
 
 #endif // ROBOCUP_ODOMETRY_H
