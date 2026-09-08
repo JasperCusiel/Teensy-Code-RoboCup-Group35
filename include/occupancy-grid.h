@@ -20,7 +20,6 @@
 #define MAP_WIDTH (int8_t)(3.0f * MAP_CELLS_PER_M)
 #define MAP_HEIGHT (int8_t)(5.0f * MAP_CELLS_PER_M)
 
-
 enum occupancy_state_t
 {
     UNKNOWN,
@@ -28,11 +27,15 @@ enum occupancy_state_t
     OCCUPIED
 };
 
+// Creates map
 void map_init();
+
+// Functions to update map
 void map_update_free(int x, int y);
 void map_update_occupied(int x, int y);
+
+// Getter functions.
 float map_get_probability(int x, int y);
 uint8_t map_get_state(int x, int y);
-float clamp_log_odds(float value);
 
 #endif // ROBOCUP_OCCUPANCY_GRID_H
