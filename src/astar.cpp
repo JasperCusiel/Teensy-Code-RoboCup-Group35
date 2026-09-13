@@ -10,20 +10,22 @@
 // Create node for every point in map
 static astar_node_t nodes[MAP_WIDTH][MAP_HEIGHT];
 
-static bool is_valid(int x, int y)
+static bool in_map(int x, int y)
 {
-    // Check if (x,y) is in map and not occupied
-    if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT)
-    {
-        return false;
-    }
+    return x >= 0 && y >= 0 && x < MAP_WIDTH && y < MAP_HEIGHT;
+}
 
-    if (map_get_state(x, y) == OCCUPIED)
-    {
+static bool is_traversable(int x, int y, int start_x, int start_y, int goal_x, int goal_y)
+{
+    // Plan through known free space only.
+    if (!in_map(x, y))
         return false;
-    }
 
-    return true;
+    if ((x == start_x && y == start_y) ||
+        (x == goal_x && y == goal_y))
+        return true;
+
+    return map_get_state(x, y) == FREE;
 }
 
 static uint16_t heuristic(const uint8_t x1, const uint8_t y1, const uint8_t x2, const uint8_t y2)
@@ -76,7 +78,8 @@ bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* p
     path->length = 0;
 
     // Check both goal and start positions are valid map positions
-    if (!is_valid(start_x, start_y) || !is_valid(goal_x, goal_y))
+    if (!in_map(start_x, start_y) ||
+        !is_traversable(goal_x, goal_y, start_x, start_y, goal_x, goal_y))
     {
         return false;
     }
@@ -154,8 +157,8 @@ bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* p
             uint8_t nx = current->x + directions[i][0];
             uint8_t ny = current->y + directions[i][1];
 
-            // Check cell is in map and not occupied
-            if (!is_valid(nx, ny))
+            // Check cell is known free before using it in a route.
+            if (!is_traversable(nx, ny, start_x, start_y, goal_x, goal_y))
                 continue;
 
             astar_node_t* neighbor = &nodes[nx][ny];
