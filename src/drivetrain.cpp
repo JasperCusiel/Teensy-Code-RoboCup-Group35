@@ -20,7 +20,7 @@ namespace
     // Motor driver uses PPM control (essentially the same as a servo)
     Servo left_motor;
     Servo right_motor;
- // Used to clamp the control output signal
+    // Used to clamp the control output signal
     float clamp_output(float output)
     {
         return fminf(1.0f, fmaxf(-1.0f, output));
@@ -50,6 +50,6 @@ void drivetrain_init()
 void set_motor_speeds(float left, float right)
 {
     // Convert commanded wheel speeds to motor drive pulse commands.
-    left_motor.writeMicroseconds(output_to_pulse(left));
+    left_motor.writeMicroseconds(output_to_pulse(-left));
     right_motor.writeMicroseconds(output_to_pulse(right));
 }
