@@ -14,11 +14,11 @@ namespace
     // Robot and PID config
     constexpr float kTrackWidthM = 0.28f;
     constexpr float kMaxWheelSpeedMps = 0.50f;
-    constexpr float kHeadingKp = 1.8f;
+    constexpr float kHeadingKp = 1.2f;
     constexpr float kHeadingKi = 0.00f;
-    constexpr float kHeadingKd = 0.03f;
-    constexpr float kSpeedKp = 2.0f;
-    constexpr float kSpeedKi = 0.1f;
+    constexpr float kHeadingKd = 0.00f;
+    constexpr float kSpeedKp = 1.0f;
+    constexpr float kSpeedKi = 0.0f;
     constexpr float kSpeedKd = 0.00f;
     constexpr float kMaxMotorEffort = 1.0f; // Max motor effort to be commanded, normalised between [-1, 1].
     constexpr float kSpeedStaticEffort = 0.6f;
@@ -186,7 +186,7 @@ void motion_controller_apply_motor_output(float left, float right)
 
 void motion_controller_get_outputs(float* left, float* right)
 {
-    // Returns the commanded motor output output
+    // Returns the commanded motor output
     if (left != nullptr) *left = left_output;
     if (right != nullptr) *right = right_output;
 }

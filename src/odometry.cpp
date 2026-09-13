@@ -220,5 +220,5 @@ void get_sensor_data(float* gyro_z, float* heading, float* vx_meas, float* vy_me
 
 float get_vy()
 {
-    return sensor_data.vy_meas;
+    return ekf.x[BODY_VY];
 }
