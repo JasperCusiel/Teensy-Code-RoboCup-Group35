@@ -14,13 +14,14 @@ namespace
     // Robot and PID config
     constexpr float kTrackWidthM = 0.28f;
     constexpr float kMaxWheelSpeedMps = 0.50f;
-    constexpr float kHeadingKp = 0.5f;
+    constexpr float kHeadingKp = 1.8f;
     constexpr float kHeadingKi = 0.00f;
-    constexpr float kHeadingKd = 0.00f;
-    constexpr float kSpeedKp = 1.0f;
-    constexpr float kSpeedKi = 0.0f;
+    constexpr float kHeadingKd = 0.03f;
+    constexpr float kSpeedKp = 2.0f;
+    constexpr float kSpeedKi = 0.1f;
     constexpr float kSpeedKd = 0.00f;
     constexpr float kMaxMotorEffort = 1.0f; // Max motor effort to be commanded, normalised between [-1, 1].
+    constexpr float kSpeedStaticEffort = 0.6f;
 
     bool enabled = false; // Tracks if motion controller is enabled.
     drive_output_callback_t output_callback = nullptr; // Callback that sets the actual motor drive output in hardware.
@@ -159,7 +160,14 @@ float speed_pid_update(float target_speed, float current_speed, float dt)
 
     speed_previous_error = error;
 
-    return clamp_value(kSpeedKp * error + kSpeedKi * speed_integral + kSpeedKd * derivative, -1.0f, 1.0f);
+    float effort = kSpeedKp * error + kSpeedKi * speed_integral + kSpeedKd * derivative;
+
+    if (target_speed > 0.01f && effort > 0.0f)
+    {
+        effort += kSpeedStaticEffort;
+    }
+
+    return clamp_value(effort, -1.0f, 1.0f);
 }
 
 void motion_controller_set_wheel_targets(float left_speed, float right_speed)
