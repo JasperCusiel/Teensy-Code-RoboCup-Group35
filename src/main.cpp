@@ -46,7 +46,8 @@ task_t tasks[] = {
   { get_tof_reading, HZ_TO_US(6),  0 },
   { mapping_task, HZ_TO_US(6),  0 },
   { autonomy_task, HZ_TO_US(20), 0 },
-  { telemetry_map_task, HZ_TO_US(6), 0 }
+  { telemetry_map_task, HZ_TO_US(6), 0 },
+  { ir_reflective_update, HZ_TO_US(5), 0 }
 };
 
 
