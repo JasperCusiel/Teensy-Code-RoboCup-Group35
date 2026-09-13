@@ -21,6 +21,7 @@
 #include <optical-flow.h>
 #include <vfh.h>
 
+#include "button.h"
 #include "scheduler.h"
 #define HZ_TO_US(x) (1000000UL / (x)) // convert hz to micro seconds
 #define NUM_TASKS (sizeof(tasks) / sizeof(tasks[0]))
@@ -38,60 +39,65 @@ uint32_t last_time_1 = micros();
 float state[3];
 
 task_t tasks[] = {
-  { imu_get_reading, HZ_TO_US(95), 0 },
-  { odometry_update,  HZ_TO_US(95), 0 },
-  { autonomy_motion_task, HZ_TO_US(95), 0 },
-  { draw,   HZ_TO_US(5),  0 },
-  { update_input,   HZ_TO_US(5),  0 },
-  { get_tof_reading, HZ_TO_US(6),  0 },
-  { mapping_task, HZ_TO_US(6),  0 },
-  { autonomy_task, HZ_TO_US(20), 0 },
-  { telemetry_map_task, HZ_TO_US(6), 0 }
+    {imu_task, HZ_TO_US(95), 0},
+    {odometry_update, HZ_TO_US(95), 0},
+    {autonomy_motion_task, HZ_TO_US(95), 0},
+    {display_draw, HZ_TO_US(5), 0},
+    {update_input, HZ_TO_US(5), 0},
+    {get_tof_reading, TOF_FULL_SCAN_PERIOD_US, 0},
+    {mapping_task, HZ_TO_US(6), 0},
+    {autonomy_task, HZ_TO_US(20), 0},
+    {telemetry_map_task, HZ_TO_US(6), 0}
 };
 
 
-void setup() {
-  Serial.begin(115200);
-  Wire.begin();
-  Wire1.begin();
+void setup()
+{
+    Serial.begin(115200);
+    Wire.begin();
+    Wire1.begin();
 
-  display_init();
-  sensors_init();
-  vfh_init();
-  odometry_init();
-  mapping_init();
-  telemetry_init();
-  drivetrain_init();
-  // motion_controller_set_output_callback(set_motor_speeds);
-  // set_motor_speeds(0.9f, 0.9f);
-  autonomy_init();
-  Serial.print("Base Colour: ");
-  if (get_base_color() == COLOR_GREEN) {
-    Serial.println("GREEN");
-  } else {
-    Serial.println("BLUE");
-  }
+    display_init();
+    sensors_init();
+    vfh_init();
+    odometry_init();
+    mapping_init();
+    telemetry_init();
+    drivetrain_init();
+    motion_controller_set_output_callback(set_motor_speeds);
+    //set_motor_speeds(0.5f, 0.5f);
+    autonomy_init();
+    Serial.print("Base Colour: ");
+    if (get_base_color() == COLOR_GREEN)
+    {
+        Serial.println("GREEN");
+    }
+    else
+    {
+        Serial.println("BLUE");
+    }
 
 
-  FastLED.addLeds<WS2812,DATA_PIN,RGB>(leds,NUM_LEDS);
-  FastLED.setBrightness(128);
-  fill_solid(leds, NUM_LEDS, CRGB::White);
-  FastLED.show();
+    FastLED.addLeds<WS2812,DATA_PIN, RGB>(leds,NUM_LEDS);
+    FastLED.setBrightness(128);
+    fill_solid(leds, NUM_LEDS, CRGB::White);
+    FastLED.show();
 
-  Serial.println("Push GO BTN to start");
-  // Wait for GO button to be pushed to start program
-  pinMode(GO_BTN, INPUT);
+    Serial.println("Push GO BTN to start");
+    // Wait for GO button to be pushed to start program
+    pinMode(GO_BTN, INPUT);
 
-  while (read_button(GO_BTN)) {
-    delay(1);
-  }
-  Serial.println("Start");
-  mission_start();
-  scheduler_init(tasks, NUM_TASKS);
+    while (read_button(GO_BTN))
+    {
+        delay(1);
+    }
+    Serial.println("Start");
+    mission_start();
+    scheduler_init(tasks, NUM_TASKS);
 }
 
 
-
-void loop() {
-  scheduler_run(tasks, NUM_TASKS);
+void loop()
+{
+    scheduler_run(tasks, NUM_TASKS);
 }
