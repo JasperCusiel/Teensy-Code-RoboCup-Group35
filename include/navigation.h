@@ -22,6 +22,9 @@ void navigation_clear_goal();
 // Re calculate path to goal
 void navigation_request_replan();
 
+// Drop the active exploration frontier and avoid immediately selecting it again.
+void navigation_reject_current_frontier();
+
 // Getter functions.
 bool navigation_has_goal();
 navigation_goal_t navigation_get_goal();

@@ -9,14 +9,18 @@
 #include "odometry.h"
 #include "mapping.h"
 #include <limits.h>
+#include <math.h>
 
 // Navigation module own the high-level target and planned path, other modules query this state.
 
 namespace
 {
     // How close we have to be to the goal before its marked as complete
-    constexpr float kGoalToleranceM = 0.5f;
-    constexpr uint8_t kNoFrontierConfirmationCycles = 20;
+    constexpr float kGoalToleranceM = 1.0f;
+    constexpr float kPi = 3.14159265f;
+    constexpr float kNoFrontierScanAngleBeforeCompleteRad = 2.5f * kPi;
+    constexpr uint8_t kRejectedFrontierCount = 8;
+    constexpr uint8_t kRejectedFrontierRadiusCells = 3;
 
     navigation_goal_t active_goal = {NAV_GOAL_NONE, {0, 0}};
     // Current navigation target, either none, frontier or base.
@@ -25,11 +29,45 @@ namespace
     grid_point_t base_cell = {0, 0}; // Cell where the base is (for return to home)
     bool base_is_set = false; // Whether base cell is valid
     bool replan_requested = false; // Event flag to request path regeneration
-    uint8_t no_frontier_cycles = 0; // Prevents declaring exploration complete after one bad scan
+    float no_frontier_scan_angle_rad = 0.0f;
+    float last_no_frontier_heading_rad = 0.0f;
+    bool no_frontier_scan_started = false;
+    frontier_goal_t rejected_frontiers[kRejectedFrontierCount] = {};
+    uint8_t rejected_frontier_count = 0;
+    uint8_t next_rejected_frontier = 0;
 
     bool cells_equal(grid_point_t a, grid_point_t b)
     {
         return a.x == b.x && a.y == b.y;
+    }
+
+    float wrap_angle(float angle)
+    {
+        while (angle > kPi) angle -= 2.0f * kPi;
+        while (angle < -kPi) angle += 2.0f * kPi;
+        return angle;
+    }
+
+    void reset_no_frontier_scan()
+    {
+        no_frontier_scan_angle_rad = 0.0f;
+        last_no_frontier_heading_rad = 0.0f;
+        no_frontier_scan_started = false;
+    }
+
+    bool no_frontier_scan_complete(float heading)
+    {
+        if (!no_frontier_scan_started)
+        {
+            last_no_frontier_heading_rad = heading;
+            no_frontier_scan_started = true;
+            return false;
+        }
+
+        no_frontier_scan_angle_rad += fabsf(wrap_angle(heading - last_no_frontier_heading_rad));
+        last_no_frontier_heading_rad = heading;
+
+        return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad;
     }
 
     // Converts a map cell index to world space coordinate of that cell's center.
@@ -56,25 +94,26 @@ namespace
     }
 
 
-    bool choose_frontier(const grid_point_t& robot_cell)
+    bool choose_frontier(const grid_point_t& robot_cell, float robot_heading)
     {
-        // Function finds the new frontier to navigate too. Check kNoFrontierConfirmationCycles before setting exploration complete.
+        // Function finds the new frontier to navigate to. Only declare exploration
+        // complete after scanning around in place with no accepted frontier.
         frontier_goal_t frontier = {};
-        if (!frontier_find_largest_goal(robot_cell.x, robot_cell.y, &frontier))
+        if (!frontier_find_largest_goal_excluding(robot_cell.x, robot_cell.y,
+                                                  rejected_frontiers,
+                                                  rejected_frontier_count,
+                                                  kRejectedFrontierRadiusCells,
+                                                  &frontier))
         {
             active_goal = {NAV_GOAL_NONE, {0, 0}};
             active_path.length = 0;
-            if (no_frontier_cycles < kNoFrontierConfirmationCycles)
-            {
-                ++no_frontier_cycles;
-            }
-            status = no_frontier_cycles >= kNoFrontierConfirmationCycles
+            status = no_frontier_scan_complete(robot_heading)
                          ? NAV_STATUS_EXPLORATION_COMPLETE
                          : NAV_STATUS_IDLE;
             return false;
         }
 
-        no_frontier_cycles = 0;
+        reset_no_frontier_scan();
 
         navigation_set_goal({NAV_GOAL_FRONTIER, {frontier.x, frontier.y}});
         return true;
@@ -131,7 +170,9 @@ void navigation_init()
     active_path.length = 0;
     status = NAV_STATUS_IDLE;
     replan_requested = false;
-    no_frontier_cycles = 0;
+    reset_no_frontier_scan();
+    rejected_frontier_count = 0;
+    next_rejected_frontier = 0;
 
     pose_t pose = {};
     get_ekf_pose(&pose.x, &pose.y, &pose.theta);
@@ -192,7 +233,7 @@ void navigation_task()
     // Exploration advances by repeatedly selecting the best frontier once the previous frontier goal has been reached.
     if (mission_should_explore() && active_goal.type == NAV_GOAL_NONE)
     {
-        if (!choose_frontier(robot_cell))
+        if (!choose_frontier(robot_cell, pose.theta))
         {
             return;
         }
@@ -215,7 +256,11 @@ void navigation_task()
     if (active_goal.type != NAV_GOAL_NONE &&
         (active_path.length == 0 || replan_requested))
     {
-        plan_from(robot_cell);
+        if (!plan_from(robot_cell) && mission_should_explore() &&
+            active_goal.type == NAV_GOAL_FRONTIER)
+        {
+            navigation_reject_current_frontier();
+        }
     }
 }
 
@@ -242,7 +287,7 @@ void navigation_clear_goal()
     active_goal = {NAV_GOAL_NONE, {0, 0}};
     active_path.length = 0;
     replan_requested = false;
-    no_frontier_cycles = 0;
+    reset_no_frontier_scan();
     status = NAV_STATUS_IDLE;
 }
 
@@ -275,6 +320,31 @@ void navigation_request_replan()
     {
         replan_requested = true;
     }
+}
+
+void navigation_reject_current_frontier()
+{
+    if (active_goal.type != NAV_GOAL_FRONTIER)
+    {
+        return;
+    }
+
+    rejected_frontiers[next_rejected_frontier] = {
+        active_goal.cell.x,
+        active_goal.cell.y,
+        0
+    };
+    next_rejected_frontier =
+        static_cast<uint8_t>((next_rejected_frontier + 1) % kRejectedFrontierCount);
+    if (rejected_frontier_count < kRejectedFrontierCount)
+    {
+        ++rejected_frontier_count;
+    }
+
+    active_goal = {NAV_GOAL_NONE, {0, 0}};
+    active_path.length = 0;
+    replan_requested = false;
+    status = NAV_STATUS_IDLE;
 }
 
 void navigation_set_base(float world_x, float world_y)
