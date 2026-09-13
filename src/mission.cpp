@@ -27,7 +27,7 @@ namespace
         state = new_state;
 
         // Clear or request replan if we are in any of the four states below.
-        // Keeps navigation synchornised with mission state
+        // Keeps navigation synchronized with mission state
         if (state == MISSION_IDLE || state == MISSION_WEIGHT_DETECTED ||
             state == MISSION_COMPLETE || state == MISSION_STOPPED)
         {
