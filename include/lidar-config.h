@@ -13,15 +13,18 @@
 #define ROI_CONFIG__USER_ROI_CENTRE_SPAD 0x007F
 #define NumOfTOFSensors 6
 #define TotalWidthOfSPADS 16
-#define WidthOfSPADsPerZone 4
-#define NumOfSPADsShiftPerZone 1
-#define HorizontalFOVofSensor 20
+#define WidthOfSPADsPerZone 8
+#define NumOfZonesPerSensor 3
+#define NumOfSPADsShiftPerZone ((TotalWidthOfSPADS - WidthOfSPADsPerZone) / (NumOfZonesPerSensor - 1))
+#define RangingFrequencyHz 15
+#define TOF_ROI_PERIOD_US ((1000000UL + RangingFrequencyHz - 1) / RangingFrequencyHz)
+#define TOF_FULL_SCAN_PERIOD_US ((TOF_ROI_PERIOD_US * NumOfZonesPerSensor) + 50000UL)
+#define HorizontalFOVofSensor 20.0f
 #define SingleSPADFOV (HorizontalFOVofSensor / TotalWidthOfSPADS)
-#define NumOfZonesPerSensor (((TotalWidthOfSPADS - WidthOfSPADsPerZone) / NumOfSPADsShiftPerZone) + 1)
-#define StartingZoneAngle (WidthOfSPADsPerZone / 2 * SingleSPADFOV)
+#define StartingZoneAngle ((WidthOfSPADsPerZone / 2.0f) * SingleSPADFOV)
 #define ZoneFOVChangePerStep (SingleSPADFOV * NumOfSPADsShiftPerZone)
 
-#define NUM_SECTORS 36
+#define NUM_SECTORS 18
 #define TOTAL_FOV radians(NumOfTOFSensors * HorizontalFOVofSensor)
 
 // Scan bearings are measured from robot forward (+Y), CCW-positive.
@@ -37,6 +40,6 @@
 #define TOF_ARRAY_OFFSET_Y 0.1f // [m]
 
 
-#define MAX_TOF_RANGE 1.3f // [m]]
+#define MAX_TOF_RANGE 4.0f // [m]]
 
 #endif // ROBOCUP_LIDAR_CONFIG_H
