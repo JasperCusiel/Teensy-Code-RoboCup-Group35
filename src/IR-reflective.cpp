@@ -7,6 +7,7 @@
 
 #define SENSE_PIN A13
 #define SENSE_THRESHOLD 30
+#define SAMPLE_COUNT 3
 
 static int16_t buffer[3] = {0, 0, 0};
 static uint8_t buf_index = 0;
@@ -20,18 +21,20 @@ bool ir_reflective_sensor_init()
     return true;
 }
 
-static void update_average()
+void ir_reflective_update()
 {
     // Moving average three readings
     buffer[buf_index] = analogRead(SENSE_PIN);
-    average = (buffer[0] + buffer[1] + buffer[2]) / 3;
     buf_index = (buf_index + 1) % 3;
+    
+    int32_t sum = 0;
+    for (uint8_t i = 0; i < SAMPLE_COUNT; i++) sum += buffer[i];
+    average = sum / SAMPLE_COUNT;
 }
 
 
 bool ir_reflective_weight_detected()
 {
     // Average readings and check if over threshold to determine if weight is present.
-    update_average();
     return (average > SENSE_THRESHOLD);
 }
