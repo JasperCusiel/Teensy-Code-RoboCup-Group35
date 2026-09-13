@@ -15,6 +15,7 @@ enum Page
     PAGE_ODOM,
     PAGE_8X8_TOF,
     PAGE_MAP,
+    PAGE_MISSION,
     PAGE_BOOT_STATUS
 };
 
@@ -31,6 +32,7 @@ void draw_boot_status();
 void display_set_page(Page new_page);
 void draw_map();
 void draw_robot_arrow(int cx, int cy, float angle, uint8_t length);
+void draw_mission();
 
 
 #endif // ROBOCUP_DISPLAY_H

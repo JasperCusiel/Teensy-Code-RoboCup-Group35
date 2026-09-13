@@ -13,9 +13,12 @@
 #include "sensors.h"
 #include "occupancy-grid.h"
 #include "mapping.h"
+#include "vfh.h"
 
 #include <Arduino.h>
 #include <Encoder.h>
+
+#include "mission.h"
 #include "U8g2lib.h"
 
 // Encoder used to scroll through the display menu
@@ -28,7 +31,7 @@
 #define HISTOGRAM_Y 63
 
 // Total number of menu items to show
-#define MENU_ITEMS_COUNT 5
+#define MENU_ITEMS_COUNT 6
 
 // Max number of lines to shows in scrolling list for sensor booting proccess
 #define MAX_LINES 7
@@ -47,7 +50,8 @@ const char* menuItems[] = {
     "Debug",
     "Odometry",
     "8x8 ToF",
-    "Map"
+    "Map",
+    "Mission"
 };
 
 // Keep track of which page we are on
@@ -153,6 +157,8 @@ void display_draw()
             break;
         case PAGE_MAP: draw_map();
             break;
+        case PAGE_MISSION: draw_mission();
+            break;
         case PAGE_BOOT_STATUS: draw_boot_status();
             break;
         }
@@ -214,18 +220,23 @@ int angle_to_u8g2(float angle)
 void draw_angle_arrow(float angle, uint8_t radius)
 {
     // Function draws arrow at specified angle and at radius from origin. Used to show target and steering direction on VFH page.
+    if (!isfinite(angle))
+    {
+        return;
+    }
+
     int cx = HISTOGRAM_X;
     int cy = HISTOGRAM_Y;
 
 
-    int x0 = cx + (int)sinf(angle) * radius;
-    int y0 = cy - (int)cosf(angle) * radius;
+    int x0 = cx + (int)(sinf(angle) * (float)radius);
+    int y0 = cy - (int)(cosf(angle) * (float)radius);
 
 
     uint8_t arrow_length = 8;
 
-    int x1 = cx + (int)sinf(angle) * (radius + arrow_length);
-    int y1 = cy - (int)cosf(angle) * (radius + arrow_length);
+    int x1 = cx + (int)(sinf(angle) * (float)(radius + arrow_length));
+    int y1 = cy - (int)(cosf(angle) * (float)(radius + arrow_length));
 
 
     display.drawLine(x0, y0, x1, y1);
@@ -234,11 +245,11 @@ void draw_angle_arrow(float angle, uint8_t radius)
     float head_angle = 0.5f;
     uint8_t head_length = 4;
 
-    int xa = x1 - (int)sinf(angle + head_angle) * head_length;
-    int ya = y1 + (int)cosf(angle + head_angle) * head_length;
+    int xa = x1 - (int)(sinf(angle + head_angle) * (float)head_length);
+    int ya = y1 + (int)(cosf(angle + head_angle) * (float)head_length);
 
-    int xb = x1 - (int)sinf(angle - head_angle) * head_length;
-    int yb = y1 + (int)cosf(angle - head_angle) * head_length;
+    int xb = x1 - (int)(sinf(angle - head_angle) * (float)head_length);
+    int yb = y1 + (int)(cosf(angle - head_angle) * (float)head_length);
 
     display.drawLine(x1, y1, xa, ya);
     display.drawLine(x1, y1, xb, yb);
@@ -270,6 +281,8 @@ void draw_robot_arrow(int cx, int cy, float angle, uint8_t length)
 void draw_vfh(const float* histogram)
 {
     // Function draws the VFH histogram output. Each sector is drawn as an arc.
+    constexpr float histogram_display_scale = 1.0f / THRESHOLD;
+
     for (int i = 0; i < NUM_SECTORS; i++)
     {
         uint8_t max_radius = 40;
@@ -281,15 +294,21 @@ void draw_vfh(const float* histogram)
         uint8_t end = angle_to_u8g2(angle_end);
 
 
-        float h = constrain(histogram[i], 0.0f, 1.0f);
+        float h = histogram[i] * histogram_display_scale;
+        if (!isfinite(h))
+        {
+            h = 0.0f;
+        }
+        h = constrain(h, 0.0f, 1.0f);
 
         uint8_t radius = min_radius + (h * (max_radius - min_radius));
 
         display.drawArc(HISTOGRAM_X, HISTOGRAM_Y, radius, start, end);
-        display.drawArc(HISTOGRAM_X, HISTOGRAM_Y, 45, angle_to_u8g2(radians(60.0f)), angle_to_u8g2(radians(-60.0f)));
-        draw_angle_arrow(vfh_get_target_angle(), 45);
-        draw_angle_arrow(vfh_get_steering_angle(), 45 + 8);
     }
+
+    display.drawArc(HISTOGRAM_X, HISTOGRAM_Y, 45, angle_to_u8g2(radians(60.0f)), angle_to_u8g2(radians(-60.0f)));
+    draw_angle_arrow(-vfh_get_target_angle(), 45);
+    draw_angle_arrow(-vfh_get_steering_angle(), 45 + 8);
 }
 
 void draw_odometry()
@@ -388,5 +407,35 @@ void draw_map()
                 display.drawPixel(offset_x + x, offset_y + (MAP_HEIGHT - 1 - y)); // Flip Y axis
             }
         }
+    }
+}
+
+
+void draw_mission()
+{
+    mission_state_t state = mission_get_state();
+    display.drawStr(2, 10, "STATE: ");
+    switch (state)
+    {
+    case MISSION_IDLE:
+        display.drawStr(42, 10, "IDLE");
+        break;
+    case MISSION_EXPLORE:
+        display.drawStr(42, 10, "EXPLORE");
+        break;
+    case MISSION_COMPLETE:
+        display.drawStr(42, 10, "COMPLETE");
+        break;
+    case MISSION_RETURN_HOME:
+        display.drawStr(42, 10, "RETURN HOME");
+        break;
+    case MISSION_STOPPED:
+        display.drawStr(42, 10, "STOPPED");
+        break;
+    case MISSION_WEIGHT_DETECTED:
+        display.drawStr(42, 10, "WEIGHT_DETECTED");
+        break;
+    default:
+        break;
     }
 }
