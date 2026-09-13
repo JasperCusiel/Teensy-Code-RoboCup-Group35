@@ -13,13 +13,20 @@
 
 namespace // Keep variables and helper functions private to this file.
 {
-    constexpr float kRecoveryHeadingOffsetRad = 0.4f;
+    constexpr float kRecoveryHeadingOffsetRad = 1.0f;
+    constexpr float kObstacleTurnRateRadPerSec = 3.0f;
+    constexpr float kTurnInPlaceSpeedScale = 0.05f;
+    constexpr float kSlowFrontClearanceM = 0.75f;
+    constexpr float kHardFrontClearanceM = 0.15f;
+    constexpr float kExplorationScanTurnRateRadPerSec = 1.0f;
+    constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 3;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
     pose_t current_pose = {}; // Stores the latest EKF pose estimate
     velocity_command_t safe_command = {0.0f, 0.0f, 0.0f, true};
     // Most recent command passed through the obstical avoidance.
     float last_steering_direction = 1.0f;
     // Records if the last VFH turn direction was left (+1) or right (-1), used to choose escape direction to spin when VFH can't find a free direction in the FOV.
+    uint8_t recovery_turn_cycles = 0;
 
     // Normalize heading angles so difference is always smallest rotation.
     float wrap_angle(float angle)
@@ -29,11 +36,26 @@ namespace // Keep variables and helper functions private to this file.
         return angle;
     }
 
+    void record_recovery_turn()
+    {
+        if (recovery_turn_cycles < kRecoveryCyclesBeforeFrontierReject)
+        {
+            ++recovery_turn_cycles;
+        }
+
+        if (recovery_turn_cycles >= kRecoveryCyclesBeforeFrontierReject)
+        {
+            navigation_reject_current_frontier();
+            recovery_turn_cycles = 0;
+        }
+    }
+
     velocity_command_t avoid_obstacles(const velocity_command_t& target, const pose_t& pose)
     {
         // Bypass VFH if stop is commanded (prevents VFH trying to command movement)
         if (target.stop)
         {
+            recovery_turn_cycles = 0;
             return target;
         }
 
@@ -45,14 +67,19 @@ namespace // Keep variables and helper functions private to this file.
         compute_vfh();
         // Select collision free steering direction
         const float steering_relative = vfh_get_steering_angle();
+        const float forward_clearance = vfh_get_forward_clearance();
 
         // No free direction if steering vfh direction is NAN
         if (!isfinite(steering_relative))
         {
-            // Rotate in place in direction opposite to last steering direction to search for new opening.
-            const float recovery_direction = -last_steering_direction;
+            // Keep rotating the same way so recovery does not oscillate left/right.
+            const float recovery_direction = last_steering_direction;
+            record_recovery_turn();
             return {
-                wrap_angle(pose.theta + recovery_direction * kRecoveryHeadingOffsetRad), 0.0f, 0.0f, false
+                wrap_angle(pose.theta + recovery_direction * kRecoveryHeadingOffsetRad),
+                0.0f,
+                recovery_direction * kObstacleTurnRateRadPerSec,
+                false
             };
         }
 
@@ -70,12 +97,46 @@ namespace // Keep variables and helper functions private to this file.
 
         // Slow down based on obstical avoidance deflection amount, larger VFH avoidance -> slower speed.
         // At 90 degree or more, turn in place instead of arc.
-        safe.linear_speed *= fmaxf(0.0f, cosf(deflection));
-        safe.turn_rate = 0.0f;
+        const float speed_scale = fmaxf(0.0f, cosf(deflection));
+        safe.linear_speed *= speed_scale;
+        if (forward_clearance < kSlowFrontClearanceM)
+        {
+            const float clearance_scale =
+                (forward_clearance - kHardFrontClearanceM) /
+                (kSlowFrontClearanceM - kHardFrontClearanceM);
+            safe.linear_speed *= fminf(1.0f, fmaxf(0.0f, clearance_scale));
+        }
+
+        if (speed_scale <= kTurnInPlaceSpeedScale ||
+            forward_clearance <= kHardFrontClearanceM)
+        {
+            const float turn_direction =
+                fabsf(steering_relative) > kSteeringDirectionDeadbandRad
+                    ? (steering_relative > 0.0f ? 1.0f : -1.0f)
+                    : last_steering_direction;
+            safe.linear_speed = 0.0f;
+            safe.turn_rate = turn_direction * kObstacleTurnRateRadPerSec;
+            record_recovery_turn();
+        }
+        else
+        {
+            safe.turn_rate = 0.0f;
+            recovery_turn_cycles = 0;
+        }
         // A zero forward speed is still a valid rotate-in-place command.
         safe.stop = false;
 
         return safe;
+    }
+
+    velocity_command_t exploration_scan_command(const pose_t& pose)
+    {
+        return {
+            pose.theta,
+            0.0f,
+            last_steering_direction * kExplorationScanTurnRateRadPerSec,
+            false
+        };
     }
 } // namespace
 
@@ -85,9 +146,9 @@ void autonomy_init()
     get_ekf_pose(&current_pose.x, &current_pose.y, &current_pose.theta);
     mission_init();
     navigation_init();
-    pure_pursuit_init();
     motion_controller_init();
     last_steering_direction = 1.0f;
+    recovery_turn_cycles = 0;
     // Publish stop command until first planning cycle produces a safe motion command.
     safe_command = {current_pose.theta, 0.0f, 0.0f, true};
 }
@@ -108,7 +169,10 @@ void autonomy_task()
 
     // Get heading and forward speed from pure pursuit
     const path_t* path = navigation_get_path();
-    const velocity_command_t target = pure_pursuit_update(path, &current_pose);
+    const velocity_command_t target =
+        mission_should_explore() && path == nullptr
+            ? exploration_scan_command(current_pose)
+            : pure_pursuit_update(path, &current_pose);
     // Pass through VFH obstacle avoidance
     safe_command = avoid_obstacles(target, current_pose);
     // Override if mission state commands stop.
