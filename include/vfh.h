@@ -6,12 +6,22 @@
 #define ROBOCUP_VFH_H
 
 #include <lidar-config.h>
-struct VFH {
-  float histogram[NUM_SECTORS];
-  bool free_directions[NUM_SECTORS];
-  float sector_angles[NUM_SECTORS];
-  float target_angle;
-  float steering_angle;
+
+#define MAX_RANGE 1.3f
+#define THRESHOLD 2.5f
+#define ROBOT_RADIUS 0.11f
+#define SAFETY_DIST 0.03f
+#define ROBOT_CLEARANCE (ROBOT_RADIUS + SAFETY_DIST)
+#define FRONT_CLEARANCE_CONE radians(15.0f)
+
+struct VFH
+{
+    float histogram[NUM_SECTORS];
+    bool free_directions[NUM_SECTORS];
+    float sector_angles[NUM_SECTORS];
+    float target_angle;
+    float steering_angle;
+    float forward_clearance;
 };
 
 
@@ -20,11 +30,12 @@ void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
                          float weight, float range);
 void build_histogram();
 void threshold_histogram();
-float get_best_direction(float target_angle);
+float vfh_get_best_direction(float target_angle);
 void compute_vfh();
-float* get_histogram();
-void set_target_angle(const float target_angle);
-float get_target_angle();
-float get_steering_angle();
+float* vfh_get_histogram();
+void vfh_set_target_angle(float target_angle);
+float vfh_get_target_angle();
+float vfh_get_steering_angle();
+float vfh_get_forward_clearance();
 
 #endif // ROBOCUP_VFH_H
