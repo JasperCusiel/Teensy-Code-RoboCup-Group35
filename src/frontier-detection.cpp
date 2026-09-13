@@ -19,6 +19,10 @@ namespace
 
     // Number of cells in map
     constexpr int kMapCellCount = MAP_WIDTH * MAP_HEIGHT;
+    constexpr int kMinUnknownNeighborsForFrontier = 2;
+    constexpr int kMinFreeNeighborsForFrontier = 2;
+    constexpr int kMaxOccupiedNeighborsForFrontier = 0;
+    constexpr int kMinFrontierClusterSize = 5;
 
     // Checks if given (x,y) is valid map cell
     bool in_map(int x, int y)
@@ -33,11 +37,29 @@ namespace
         const int dy = y0 - y1;
         return dx * dx + dy * dy;
     }
+
+    bool frontier_is_rejected(const cell_t& target,
+                              const frontier_goal_t* rejected,
+                              uint8_t rejected_count,
+                              uint8_t reject_radius_cells)
+    {
+        const int reject_radius_squared = reject_radius_cells * reject_radius_cells;
+        for (uint8_t i = 0; i < rejected_count; ++i)
+        {
+            if (distance_squared(target.x, target.y, rejected[i].x, rejected[i].y) <=
+                reject_radius_squared)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 } // namespace
 
 bool frontier_is_cell(int x, int y)
 {
-    // Function determines if the given cell is frontier: a frontier cell is a known free cell with at least one unknown neighbor.
+    // Function determines if the given cell is frontier: a frontier cell is a supported
+    // known-free cell on the boundary of unknown space.
 
     // Check if cell is both in map and free.
     if (!in_map(x, y))
@@ -49,7 +71,11 @@ bool frontier_is_cell(int x, int y)
         return false;
     }
 
-    // Check the 8 cells around the target cell (diagonally touching unknown cells count)
+    int unknown_neighbors = 0;
+    int free_neighbors = 0;
+    int occupied_neighbors = 0;
+
+    // Check the 8 cells around the target cell.
     for (int dx = -1; dx <= 1; ++dx)
     {
         for (int dy = -1; dy <= 1; ++dy)
@@ -62,17 +88,42 @@ bool frontier_is_cell(int x, int y)
             const int nx = x + dx;
             const int ny = y + dy;
 
-            // Frontier found as soon as there is one unknown cell touching the target cell
-            if (in_map(nx, ny) && map_get_state(nx, ny) == UNKNOWN)
+            if (!in_map(nx, ny))
             {
-                return true;
+                continue;
+            }
+
+            const uint8_t neighbor_state = map_get_state(nx, ny);
+            if (neighbor_state == UNKNOWN)
+            {
+                ++unknown_neighbors;
+            }
+            else if (neighbor_state == FREE)
+            {
+                ++free_neighbors;
+            }
+            else if (neighbor_state == OCCUPIED)
+            {
+                ++occupied_neighbors;
             }
         }
     }
-    return false;
+
+    return unknown_neighbors >= kMinUnknownNeighborsForFrontier &&
+        free_neighbors >= kMinFreeNeighborsForFrontier &&
+        occupied_neighbors <= kMaxOccupiedNeighborsForFrontier;
 }
 
 bool frontier_find_largest_goal(int robot_x, int robot_y, frontier_goal_t* goal)
+{
+    return frontier_find_largest_goal_excluding(robot_x, robot_y, nullptr, 0, 0, goal);
+}
+
+bool frontier_find_largest_goal_excluding(int robot_x, int robot_y,
+                                          const frontier_goal_t* rejected,
+                                          uint8_t rejected_count,
+                                          uint8_t reject_radius_cells,
+                                          frontier_goal_t* goal)
 {
     // Function takes in the robots position on the map and outputs goal frontier.
     // Returns true if frontier was found and goal populated, false if not.
@@ -142,6 +193,12 @@ bool frontier_find_largest_goal(int robot_x, int robot_y, frontier_goal_t* goal)
                     }
                 }
             }
+
+            if (component_size < kMinFrontierClusterSize)
+            {
+                continue;
+            }
+
             // Calculate the centroid of the frontier cluster
             const int centroid_x = sum_x / component_size;
             const int centroid_y = sum_y / component_size;
@@ -162,6 +219,12 @@ bool frontier_find_largest_goal(int robot_x, int robot_y, frontier_goal_t* goal)
             }
 
             const cell_t target = component[target_index];
+            if (frontier_is_rejected(target, rejected, rejected_count,
+                                     reject_radius_cells))
+            {
+                continue;
+            }
+
             const int robot_distance = distance_squared(target.x, target.y,
                                                         robot_x, robot_y);
             if (!found || component_size > largest_size ||

@@ -25,5 +25,10 @@ bool frontier_is_cell(int x, int y);
 // Returns true if frontier found and populates goal, false if not.
 bool frontier_find_largest_goal(int robot_x, int robot_y,
                                 frontier_goal_t* goal);
+bool frontier_find_largest_goal_excluding(int robot_x, int robot_y,
+                                          const frontier_goal_t* rejected,
+                                          uint8_t rejected_count,
+                                          uint8_t reject_radius_cells,
+                                          frontier_goal_t* goal);
 
 #endif // ROBOCUP_FRONTIER_DETECTION_H
