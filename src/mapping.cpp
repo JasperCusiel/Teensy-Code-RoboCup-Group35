@@ -80,18 +80,16 @@ namespace
             // Convert lidar end point to (x,y) in world frame.
             lidar_to_world(r, theta, &pose, &world_x, &world_y);
 
-            if (!world_to_map(world_x, world_y, &map_x, &map_y))
-            {
-                continue; // Skip inserting ray if not valid
-            }
+            const bool endpoint_inside_map = world_to_map(world_x, world_y, &map_x, &map_y);
 
             // Mark endpoint as occupied or free based on lidar range reading.
-            if (obstacle_detected)
+            if (obstacle_detected && endpoint_inside_map)
             {
                 ray_cast(robot_x, robot_y, map_x, map_y, map_update_free, map_update_occupied);
             }
             else
             {
+                // Still clear free space even when the max-range endpoint lies beyond the map.
                 ray_cast(robot_x, robot_y, map_x, map_y, map_update_free, nullptr);
             }
         }

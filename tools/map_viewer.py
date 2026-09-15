@@ -51,15 +51,20 @@ class MapViewer:
         print(f"Configured {width}x{height} map at {self.config['cells_per_m']} cells/m")
 
     def world_to_cell(self, x, y):
+        mx, my = self.world_to_raw_cell(x, y)
+        return (mx, my) if 0 <= mx < self.config["width"] and 0 <= my < self.config["height"] else None
+
+    def world_to_raw_cell(self, x, y):
         c = self.config
         mx = math.floor((x - c["min_x"]) * c["cells_per_m"])
         my = math.floor((y - c["min_y"]) * c["cells_per_m"])
-        return (mx, my) if 0 <= mx < c["width"] and 0 <= my < c["height"] else None
+        return mx, my
 
     def update_cell(self, cell, delta):
         if cell is not None:
             x, y = cell
-            self.log_odds[y, x] = np.clip(self.log_odds[y, x] + delta, -5.0, 5.0)
+            if 0 <= x < self.config["width"] and 0 <= y < self.config["height"]:
+                self.log_odds[y, x] = np.clip(self.log_odds[y, x] + delta, -5.0, 5.0)
 
     def cell_index_to_world(self, index):
         c = self.config
@@ -141,9 +146,10 @@ class MapViewer:
             yr = distance * math.cos(bearing) + c["offset_y"]
             wx = xr * cos_theta - yr * sin_theta + x
             wy = xr * sin_theta + yr * cos_theta + y
-            end_cell = self.world_to_cell(wx, wy)
-            if robot_cell is not None and end_cell is not None:
-                self.ray_cast(robot_cell, end_cell, obstacle)
+            end_cell = self.world_to_raw_cell(wx, wy)
+            end_inside = self.world_to_cell(wx, wy) is not None
+            if robot_cell is not None:
+                self.ray_cast(robot_cell, end_cell, obstacle and end_inside)
             endpoints.append((wx, wy))
             rays.append(((x, y), (wx, wy)))
 
