@@ -65,7 +65,6 @@ void setup()
     telemetry_init();
     drivetrain_init();
     motion_controller_set_output_callback(set_motor_speeds);
-    //set_motor_speeds(0.5f, 0.5f);
     autonomy_init();
     Serial.print("Base Colour: ");
     if (get_base_color() == COLOR_GREEN)
