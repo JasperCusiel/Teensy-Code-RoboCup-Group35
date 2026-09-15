@@ -14,14 +14,17 @@ namespace
     // Robot and PID config
     constexpr float kTrackWidthM = 0.28f;
     constexpr float kMaxWheelSpeedMps = 0.50f;
-    constexpr float kHeadingKp = 1.2f;
+    constexpr float kHeadingKp = 2.5f;
     constexpr float kHeadingKi = 0.00f;
     constexpr float kHeadingKd = 0.00f;
-    constexpr float kSpeedKp = 1.0f;
+    constexpr float kSpeedKp = 1.5f;
     constexpr float kSpeedKi = 0.0f;
     constexpr float kSpeedKd = 0.00f;
     constexpr float kMaxMotorEffort = 1.0f; // Max motor effort to be commanded, normalised between [-1, 1].
-    constexpr float kSpeedStaticEffort = 0.6f;
+    constexpr float kSpeedFeedForward = 0.55f;
+    constexpr float kSpeedStaticEffort = 0.18f;
+    constexpr float kSpeedDeadbandMps = 0.01f;
+    constexpr float kMaxEffortSlewPerSec = 3.0f;
 
     bool enabled = false; // Tracks if motion controller is enabled.
     drive_output_callback_t output_callback = nullptr; // Callback that sets the actual motor drive output in hardware.
@@ -57,6 +60,19 @@ namespace
         while (angle > PI) angle -= 2.0f * PI;
         while (angle < -PI) angle += 2.0f * PI;
         return angle;
+    }
+
+    float sign_nonzero(float value)
+    {
+        return value >= 0.0f ? 1.0f : -1.0f;
+    }
+
+    float slew_toward(float current, float target, float max_delta)
+    {
+        const float delta = target - current;
+        if (delta > max_delta) return current + max_delta;
+        if (delta < -max_delta) return current - max_delta;
+        return target;
     }
 
     void reset_pid()
@@ -116,8 +132,13 @@ void motion_controller_update(const pose_t* pose, const velocity_command_t* comm
     // Normalize wheel speeds to motor effort.
     const float turn_effort = 0.5f * kTrackWidthM * turn_rate / kMaxWheelSpeedMps;
 
-    left_output = clamp_value(drive_effort - turn_effort, -kMaxMotorEffort, kMaxMotorEffort);
-    right_output = clamp_value(drive_effort + turn_effort, -kMaxMotorEffort, kMaxMotorEffort);
+    const float raw_left_output = clamp_value(drive_effort - turn_effort,
+                                              -kMaxMotorEffort, kMaxMotorEffort);
+    const float raw_right_output = clamp_value(drive_effort + turn_effort,
+                                               -kMaxMotorEffort, kMaxMotorEffort);
+    const float max_effort_delta = kMaxEffortSlewPerSec * dt;
+    left_output = slew_toward(left_output, raw_left_output, max_effort_delta);
+    right_output = slew_toward(right_output, raw_right_output, max_effort_delta);
 
     // Output to motor controller.
     motion_controller_apply_motor_output(left_output, right_output);
@@ -162,9 +183,18 @@ float speed_pid_update(float target_speed, float current_speed, float dt)
 
     float effort = kSpeedKp * error + kSpeedKi * speed_integral + kSpeedKd * derivative;
 
-    if (target_speed > 0.01f && effort > 0.0f)
+    if (fabsf(target_speed) > kSpeedDeadbandMps)
     {
-        effort += kSpeedStaticEffort;
+        const float target_sign = sign_nonzero(target_speed);
+        effort += target_sign * kSpeedStaticEffort;
+        effort += (target_speed / kMaxWheelSpeedMps) * kSpeedFeedForward;
+
+        // Avoid reverse braking from optical-flow noise during forward commands.
+        // Differential turn effort is still applied per wheel after this term.
+        if (target_sign > 0.0f && effort < 0.0f)
+        {
+            effort = 0.0f;
+        }
     }
 
     return clamp_value(effort, -1.0f, 1.0f);
@@ -190,4 +220,3 @@ void motion_controller_get_outputs(float* left, float* right)
     if (left != nullptr) *left = left_output;
     if (right != nullptr) *right = right_output;
 }
-
