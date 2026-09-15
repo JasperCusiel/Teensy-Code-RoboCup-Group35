@@ -8,14 +8,14 @@
 
 // Lifter motor config
 // Motor 1
-#define PWM1_PIN 28
+#define PWM1_PIN 29
 #define ENC1_A   32
 #define ENC1_B   33
 
 // Motor 2
-#define PWM2_PIN 29
-#define ENC2_A   30
-#define ENC2_B   31
+#define PWM2_PIN 0
+#define ENC2_A   5
+#define ENC2_B   4
 
 // Homing switches
 #define END_STOP_A_PIN 0
@@ -29,7 +29,7 @@
 #define PWM_MAX 255
 #define HOMING_SPEED 200
 #define LIMIT_SWITCH_BACK_OFF 2000
-#define PWM_SKIP 71
+#define PWM_SKIP 80
 #define ACCURACY 50
 
 // PID tuning values
@@ -111,7 +111,7 @@ namespace
         }
 
         // Slow homing
-        servo->startHoming(1, 100, MAX_TRAVEL_ENC_COUNT);
+        servo->startHoming(1, 150, MAX_TRAVEL_ENC_COUNT);
 
         while (servo->isHoming())
         {
