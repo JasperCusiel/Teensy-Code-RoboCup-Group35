@@ -11,6 +11,7 @@
 #include "smart-servo.h"
 #include "telemetry.h"
 #include "weight-detection.h"
+#include "weight-pickup.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <colour-sensor.h>
@@ -47,7 +48,9 @@ task_t tasks[] = {
     {get_tof_reading, TOF_FULL_SCAN_PERIOD_US, 0},
     {mapping_task, HZ_TO_US(6), 0},
     {autonomy_task, HZ_TO_US(20), 0},
-    {telemetry_map_task, HZ_TO_US(6), 0}
+    {telemetry_map_task, HZ_TO_US(6), 0},
+    {lifter_motor_update, HZ_TO_US(100), 0},
+    {weight_pickup_state_update, HZ_TO_US(10), 0}
 };
 
 

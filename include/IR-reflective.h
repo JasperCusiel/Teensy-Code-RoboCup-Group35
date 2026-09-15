@@ -13,6 +13,6 @@ void ir_reflective_update();
 
 
 // return true if average value is greater than threshold (weight present) or false if not.
-bool ir_reflective_weight_detected();
+bool is_weight_detected_ir_reflective();
 
 #endif // ROBOCUP_IR_REFLECTIVE_H

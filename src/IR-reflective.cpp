@@ -33,7 +33,7 @@ void ir_reflective_update()
 }
 
 
-bool ir_reflective_weight_detected()
+bool is_weight_detected_ir_reflective()
 {
     // Average readings and check if over threshold to determine if weight is present.
     return (average > SENSE_THRESHOLD);

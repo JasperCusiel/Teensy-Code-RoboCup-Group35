@@ -16,3 +16,8 @@ bool inductive_sensor_init()
     }
     return false;
 }
+
+bool is_real_weight_inductive_sensor()
+{
+    return !digitalRead(SENSE_PIN);
+}

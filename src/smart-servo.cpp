@@ -12,6 +12,14 @@
 #define SERVO_ID_A 02
 #define SERVO_ID_B 03
 
+
+//need to set these values
+#define FRONT_SERVO_UP_POS   100
+#define FRONT_SERVO_DOWN_POS 0
+#define BACK_SERVO_UP_POS    100
+#define BACK_SERVO_DOWN_POS  0
+#define SERVO_MOVE_PLAYTIME  50
+
 HerkulexServoBus herkulex_bus(SERIAL_BUS);
 HerkulexServo servo_a(herkulex_bus, SERVO_ID_A);
 HerkulexServo servo_b(herkulex_bus, SERVO_ID_B);
@@ -49,12 +57,51 @@ bool smart_servo_init()
 
         servos[i]->setLedColor(HerkulexLed::Green);
         servos[i]->setTorqueOn();
+        servos[i]->enablePositionControlMode();
 
         if (servo_error != HerkulexStatusError::None)
         {
             num_errors++;
         }
     }
+    set_front_servo_down();
+    set_back_servo_down();
 
     return num_errors == 0;
+}
+
+void set_front_servo_up()
+{
+    servo_a.setPosition(FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+}
+
+void set_front_servo_down()
+{
+    servo_a.setPosition(FRONT_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
+}
+
+void set_back_servo_up()
+{
+    servo_b.setPosition(BACK_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+}
+
+void set_back_servo_down()
+{
+    servo_b.setPosition(BACK_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
+}
+
+bool is_front_servo_in_position()
+{
+    HerkulexStatusError status_error;
+    HerkulexStatusDetail status_detail;
+    servo_a.getStatus(status_error, status_detail);
+    return (status_detail & HerkulexStatusDetail::InPosition) != HerkulexStatusDetail::None;
+}
+
+bool is_back_servo_in_position()
+{
+    HerkulexStatusError status_error;
+    HerkulexStatusDetail status_detail;
+    servo_b.getStatus(status_error, status_detail);
+    return (status_detail & HerkulexStatusDetail::InPosition) != HerkulexStatusDetail::None;
 }
