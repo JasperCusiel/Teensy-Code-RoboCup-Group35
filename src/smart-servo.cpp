@@ -49,6 +49,7 @@ bool smart_servo_init()
 
         servos[i]->setLedColor(HerkulexLed::Green);
         servos[i]->setTorqueOn();
+        servos[i]->enablePositionControlMode();
 
         if (servo_error != HerkulexStatusError::None)
         {
