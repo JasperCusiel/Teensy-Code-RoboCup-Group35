@@ -20,6 +20,8 @@
 #define LOADING_WEIGHT_DELAY_MS 500
 #define END_STOP_A_PIN 0
 #define END_STOP_B_PIN 1
+#define WEIGHT_UNDETECTED_TIMEOUT_MS 5000
+#define SEARCHING_TIMEOUT_MS 5000
 
 static weight_pickup_state_t current_state = PICKUP_STATUS_IDLE;
 static short weight_type_check_cycle = 0;
@@ -27,6 +29,8 @@ static unsigned long aligning_start_time = 0;
 static int weight_pos = 0;
 static unsigned long fake_weight_clear_start = 0;
 static unsigned long loading_confirm_start = 0;
+static unsigned long weight_undetected_time = 0;
+static unsigned long searching_start_time = 0;
 
 
 
@@ -57,12 +61,43 @@ void weight_pickup_state_update()
 
         if (weight_pos == LEFT) {
             //turn left
+            weight_undetected_time = 0;
         } else if (weight_pos == RIGHT) {
             //turn right
-        } else {         // if in middle or no longer in FOV
+            weight_undetected_time = 0;
+        } else if (weight_pos == CENTRE){         // if in middle or no longer in FOV
             //move forward
+            weight_undetected_time = 0;
+        } else if (weight_pos == LOST) {
+            //move forward slowly
+            if (weight_undetected_time == 0) {
+                weight_undetected_time = millis();
+            } else if (millis() - weight_undetected_time > WEIGHT_UNDETECTED_TIMEOUT_MS) {
+                // been stuck in "undetected" for too long, give up on aligning
+                weight_undetected_time = 0;
+                searching_start_time = millis();
+                current_state = PICKUP_STATUS_WEIGHT_LOST;
+                break;
+            }
         }
         break;
+
+    case PICKUP_STATUS_WEIGHT_LOST:
+        if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS)
+            mission_report_pickup_complete(false);
+            current_state = PICKUP_STATUS_IDLE;
+            break;
+        if (weight_pos != LOST) {
+            //stop turning
+            searching_start_time = 0;
+            current_state = PICKUP_STATUS_ALIGNING;
+            break;
+        } else {
+            //turn on spot
+        }
+        break;
+
+
 
 
     case PICKUP_STATUS_CHECKING_WEIGHT_TYPE:
