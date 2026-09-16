@@ -83,10 +83,12 @@ void weight_pickup_state_update()
         break;
 
     case PICKUP_STATUS_WEIGHT_LOST:
-        if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS)
+        int weight_pos = get_weight_position(); 
+        if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS) {
             mission_report_pickup_complete(false);
             current_state = PICKUP_STATUS_IDLE;
             break;
+        }
         if (weight_pos != LOST) {
             //stop turning
             searching_start_time = 0;
