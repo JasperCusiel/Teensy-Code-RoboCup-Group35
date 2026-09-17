@@ -15,9 +15,9 @@
 #include "colour-sensor.h"
 #include "navigation.h"
 
-#define BLUE_BASE_X 2.8f
-#define GREEN_BASE_X 0.2f
-#define BASE_Y  0.2f
+#define BLUE_BASE_X 2.6f
+#define GREEN_BASE_X 0.4f
+#define BASE_Y  0.4f
 
 #define X 0
 #define Y 1
@@ -74,7 +74,7 @@ void odometry_init()
     const float Pdiag[EKF_N] = {1, 1, 0.5, 1, 1};
     ekf_initialize(&ekf, Pdiag);
     float initial_x = (get_base_color() == COLOR_GREEN) ? GREEN_BASE_X : BLUE_BASE_X;
-    float initial_theta = 0;
+    float initial_theta = imu_get_heading();
 
     navigation_set_base(initial_x, BASE_Y);
 
