@@ -19,6 +19,8 @@
 #include <Encoder.h>
 
 #include "mission.h"
+#include "navigation.h"
+#include "coverage-planner.h"
 #include "U8g2lib.h"
 
 // Encoder used to scroll through the display menu
@@ -69,7 +71,6 @@ static U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
 void update_input()
 {
     // Function reads encoder input to scroll menu and enter and exit pages.
-
 
     int32_t delta = -(input_encoder.readAndReset() / 2);
     // -ve inverts scroll direction to match display orientation.
@@ -438,4 +439,57 @@ void draw_mission()
     default:
         break;
     }
+
+    display.drawStr(2, 22, "NAV: ");
+    switch (navigation_get_status())
+    {
+    case NAV_STATUS_IDLE:
+        display.drawStr(32, 22, "IDLE/SCAN");
+        break;
+    case NAV_STATUS_PLANNING:
+        display.drawStr(32, 22, "PLANNING");
+        break;
+    case NAV_STATUS_FOLLOWING_PATH:
+        display.drawStr(32, 22, "FOLLOWING");
+        break;
+    case NAV_STATUS_GOAL_REACHED:
+        display.drawStr(32, 22, "GOAL REACHED");
+        break;
+    case NAV_STATUS_EXPLORATION_COMPLETE:
+        display.drawStr(32, 22, "EXP COMPLETE");
+        break;
+    case NAV_STATUS_PATH_FAILED:
+        display.drawStr(32, 22, "PATH FAILED");
+        break;
+    default:
+        break;
+    }
+
+    const navigation_goal_t goal = navigation_get_goal();
+    display.drawStr(2, 34, "GOAL: ");
+    switch (goal.type)
+    {
+    case NAV_GOAL_NONE:
+        display.drawStr(38, 34, "NONE");
+        break;
+    case NAV_GOAL_FRONTIER:
+        display.drawStr(38, 34, "FRONTIER");
+        break;
+    case NAV_GOAL_COVERAGE:
+        display.drawStr(38, 34, "COVERAGE");
+        break;
+    case NAV_GOAL_BASE:
+        display.drawStr(38, 34, "BASE");
+        break;
+    default:
+        break;
+    }
+
+    char buf[22];
+    snprintf(buf, sizeof(buf), "CELL:%02d,%02d", goal.cell.x, goal.cell.y);
+    display.drawStr(2, 46, buf);
+    snprintf(buf, sizeof(buf), "COV:%u/%u",
+             coverage_planner_goal_index(),
+             coverage_planner_goal_count());
+    display.drawStr(2, 58, buf);
 }
