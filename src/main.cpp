@@ -42,6 +42,7 @@ task_t tasks[] = {
     {imu_task, HZ_TO_US(95), 0},
     {odometry_update, HZ_TO_US(95), 0},
     {autonomy_motion_task, HZ_TO_US(95), 0},
+    {drivetrain_update, HZ_TO_US(95), 0},
     {display_draw, HZ_TO_US(5), 0},
     {update_input, HZ_TO_US(5), 0},
     {get_tof_reading, TOF_FULL_SCAN_PERIOD_US, 0},
