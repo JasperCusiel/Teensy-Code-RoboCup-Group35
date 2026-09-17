@@ -10,19 +10,46 @@
 
 VFH vfh;
 
+namespace
+{
+    float wrap_angle(float angle)
+    {
+        while (angle > PI) angle -= 2.0f * PI;
+        while (angle < -PI) angle += 2.0f * PI;
+        return angle;
+    }
+
+    float clamp_angle_to_fov(float angle)
+    {
+        if (angle < FOV_MIN) return FOV_MIN;
+        if (angle > FOV_MAX) return FOV_MAX;
+        return angle;
+    }
+
+    float angular_distance(float a, float b)
+    {
+        return fabsf(wrap_angle(a - b));
+    }
+}
+
 void vfh_init()
 {
     for (int i = 0; i < NUM_SECTORS; i++)
     {
+        vfh.histogram[i] = 0.0f;
+        vfh.free_directions[i] = true;
         vfh.sector_angles[i] = FOV_MIN + (i + 0.5f) * SECTOR_WIDTH;
     }
+    vfh.target_angle = 0.0f;
+    vfh.steering_angle = 0.0f;
     vfh.forward_clearance = MAX_RANGE;
 }
 
 void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
                          float weight, float range)
 {
-    int spread = (int)ceilf(atan2f(ROBOT_CLEARANCE, range) / SECTOR_WIDTH);
+    int spread = (int)ceilf(
+        atan2f(ROBOT_CLEARANCE * VFH_INFLATION_SCALE, range) / SECTOR_WIDTH);
     for (int i = -spread; i <= spread; i++)
     {
         int s = sector + i;
@@ -73,7 +100,14 @@ void threshold_histogram()
 {
     for (int i = 0; i < NUM_SECTORS; i++)
     {
-        vfh.free_directions[i] = (vfh.histogram[i] < THRESHOLD);
+        if (vfh.free_directions[i])
+        {
+            vfh.free_directions[i] = (vfh.histogram[i] < VFH_BLOCKED_THRESHOLD);
+        }
+        else
+        {
+            vfh.free_directions[i] = (vfh.histogram[i] < VFH_FREE_THRESHOLD);
+        }
     }
 }
 
@@ -81,6 +115,8 @@ float vfh_get_best_direction(float target_angle)
 {
     float best_angle = NAN;
     float best_cost = 1e9;
+    const float target = clamp_angle_to_fov(target_angle);
+    const bool have_previous = isfinite(vfh.steering_angle);
 
     for (size_t i = 0; i < NUM_SECTORS; i++)
     {
@@ -91,8 +127,10 @@ float vfh_get_best_direction(float target_angle)
         // sector to angle
         float angle = vfh.sector_angles[i];
 
-        float diff = fabs(angle - target_angle);
-        float cost = diff + vfh.histogram[i] * 0.5f;
+        float diff = angular_distance(angle, target);
+        float steering_change =
+            have_previous ? angular_distance(angle, vfh.steering_angle) : 0.0f;
+        float cost = diff + vfh.histogram[i] * 0.5f + steering_change * 0.25f;
 
         if (cost < best_cost)
         {

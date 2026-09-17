@@ -14,13 +14,15 @@
 namespace // Keep variables and helper functions private to this file.
 {
     constexpr float kRecoveryHeadingOffsetRad = 1.0f;
-    constexpr float kObstacleTurnRateRadPerSec = 3.0f;
-    constexpr float kTurnInPlaceSpeedScale = 0.05f;
-    constexpr float kSlowFrontClearanceM = 0.75f;
-    constexpr float kHardFrontClearanceM = 0.15f;
-    constexpr float kExplorationScanTurnRateRadPerSec = 1.0f;
-    constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 3;
+    constexpr float kObstacleTurnRateRadPerSec = 2.0f;
+    constexpr float kTurnInPlaceSpeedScale = 0.50f;
+    constexpr float kSlowFrontClearanceM = 0.35f;
+    constexpr float kHardFrontClearanceM = 0.08f;
+    constexpr float kExplorationScanTurnRateRadPerSec = 0.5f;
+    constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 40;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
+    constexpr float kTurnInPlaceLinearDeadbandMps = 0.01f;
+    constexpr float kTurnInPlaceTurnRateDeadbandRadPerSec = 0.01f;
     pose_t current_pose = {}; // Stores the latest EKF pose estimate
     velocity_command_t safe_command = {0.0f, 0.0f, 0.0f, true};
     // Most recent command passed through the obstical avoidance.
@@ -45,9 +47,15 @@ namespace // Keep variables and helper functions private to this file.
 
         if (recovery_turn_cycles >= kRecoveryCyclesBeforeFrontierReject)
         {
-            navigation_reject_current_frontier();
+            navigation_reject_current_goal();
             recovery_turn_cycles = 0;
         }
+    }
+
+    bool is_turn_in_place_command(const velocity_command_t& command)
+    {
+        return fabsf(command.linear_speed) <= kTurnInPlaceLinearDeadbandMps &&
+            fabsf(command.turn_rate) > kTurnInPlaceTurnRateDeadbandRadPerSec;
     }
 
     velocity_command_t avoid_obstacles(const velocity_command_t& target, const pose_t& pose)
@@ -81,6 +89,13 @@ namespace // Keep variables and helper functions private to this file.
                 recovery_direction * kObstacleTurnRateRadPerSec,
                 false
             };
+        }
+
+        if (is_turn_in_place_command(target))
+        {
+            recovery_turn_cycles = 0;
+            last_steering_direction = target.turn_rate > 0.0f ? 1.0f : -1.0f;
+            return target;
         }
 
         // Only consider meaningful steering values as turn commands.

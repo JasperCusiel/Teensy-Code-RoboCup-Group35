@@ -9,7 +9,7 @@
 #define HEIGHT 0.09f // Mounting height off floor [m]
 
 // Physical sensor offset from robot center.
-#define FLOW_OFFSET_X 0.0f    // [m]
+#define FLOW_OFFSET_X 0.0925f    // [m]
 #define FLOW_OFFSET_Y (-0.150f)    // [m]
 
 Bitcraze_PMW3901 flow(OPTICAL_FLOW_CS);

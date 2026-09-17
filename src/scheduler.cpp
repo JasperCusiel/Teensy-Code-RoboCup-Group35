@@ -26,9 +26,13 @@ void scheduler_run(task_t *tasks, uint8_t count) {
     if ((int32_t)(now - tasks[i].next_run) >= 0) {
       tasks[i].handler();
 
-      // Maintain fixed frequency (no drift)
-      tasks[i].next_run += tasks[i].period_us;
+      // Maintain cadence, but skip missed periods after blocking tasks.
+      now = micros();
+      uint32_t next_run = tasks[i].next_run + tasks[i].period_us;
+      if ((int32_t)(now - next_run) >= 0) {
+        next_run = now + tasks[i].period_us;
+      }
+      tasks[i].next_run = next_run;
     }
   }
 }
-

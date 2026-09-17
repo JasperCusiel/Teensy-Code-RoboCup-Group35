@@ -2,6 +2,8 @@
 // Created by Jasper Cusiel on 03/09/2026.
 //
 #include "mission.h"
+
+#include "button.h"
 #include "navigation.h"
 
 // Mission module handles the mission logic via FSM to
@@ -67,10 +69,15 @@ void mission_task()
             weight_detected_event = false;
             enter_state(MISSION_WEIGHT_DETECTED);
         }
-        else if (navigation_path_failed() || navigation_exploration_complete())
+        else if (navigation_path_failed())
         {
-            // Stop if nav failure or no where left to explore.
+            // Stop if nav failed while exploring.
             enter_state(MISSION_STOPPED);
+        }
+        else if (navigation_exploration_complete())
+        {
+            // Coverage is complete, return to the saved base cell.
+            enter_state(MISSION_RETURN_HOME);
         }
 
         break;
@@ -106,6 +113,7 @@ void mission_task()
 
     case MISSION_COMPLETE:
     case MISSION_STOPPED:
+
         break;
     }
 }
@@ -160,3 +168,8 @@ void mission_report_pickup_complete(bool success)
 }
 
 uint8_t mission_get_weight_count() { return collected_weight_count; }
+
+void mission_return_home()
+{
+    enter_state(MISSION_RETURN_HOME);
+}

@@ -14,7 +14,7 @@
 namespace
 {
     // PP config
-    constexpr float kLookaheadDistanceM = 0.35f;
+    constexpr float kLookaheadDistanceM = 0.6f;
     constexpr float kGoalToleranceM = 0.15f;
     constexpr float kNominalSpeedMps = 0.30f;
     constexpr float kMinimumTrackingSpeedMps = 0.08f;
@@ -97,7 +97,7 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
 
     command.heading = heading_to_cell(robot_pose, path->points[lookahead_index]);
     const float heading_error = wrap_angle(command.heading - robot_pose->theta);
-    const float alignment = fmaxf(0.0f, cosf(heading_error));
+    const float alignment = fmaxf(0.35f, cosf(heading_error));
 
     command.linear_speed = alignment > 0.0f ? fmaxf(kMinimumTrackingSpeedMps, kNominalSpeedMps * alignment) : 0.0f;
     command.turn_rate = 0.0f;

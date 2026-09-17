@@ -7,7 +7,15 @@
 
 void drivetrain_init();
 
-// Set normalized motor speeds, values outside [-1,1] are clamped. -1 = full reverse, 1=full foward.
-void set_motor_speeds(float left, float right);
+// Run the drivetrain speed controllers. Call frequently from the scheduler.
+void drivetrain_update();
+
+// Set wheel speed targets in metres per second.
+void set_wheel_speed_targets(float left_mps, float right_mps);
+
+// Backwards-compatible wrapper. These values are wheel speed targets in m/s,
+// not normalized motor effort.
+void set_motor_speeds(float left_mps, float right_mps);
+void PID_tune();
 
 #endif // ROBOCUP_DRIVETRAIN_H

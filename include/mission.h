@@ -53,5 +53,6 @@ void mission_report_pickup_complete(bool success);
 
 // Return number of successfully collected weights.
 uint8_t mission_get_weight_count();
+void mission_return_home();
 
 #endif // ROBOCUP_MISSION_H
