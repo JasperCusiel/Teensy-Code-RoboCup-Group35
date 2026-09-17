@@ -23,13 +23,13 @@ static bool boot_okay = true;
 static const char* failed_sensor = nullptr;
 
 sensor_t sensors[] = {
+    {false, limit_switches_init, "LIMIT SW'S"},
     {false, tof_init, "TOF ARRAY"},
     {false, smart_servo_init, "SERVOS"},
     {false, imu_init, "IMU"},
     {false, optical_flow_init, "OPT FLOW"},
     {false, colour_sensor_init, "COLOUR"},
     {false, inductive_sensor_init, "INDUCTIVE"},
-    {false, limit_switches_init, "LIMIT SW'S"},
     {false, weight_detection_init, "8X8 TOF"},
     {false, ir_reflective_sensor_init, "REFLECTIVE"},
     {false, lifter_motor_init, "LIFTER SERVOS"}
@@ -55,8 +55,6 @@ void sensors_init()
     }
     display_set_page(PAGE_BOOT_STATUS);
     display_draw();
-    delay(2000);
-    display_set_page(PAGE_MENU);
 }
 
 bool sensors_boot_okay()
