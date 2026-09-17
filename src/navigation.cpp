@@ -4,6 +4,7 @@
 
 #include "navigation.h"
 
+#include "coverage-planner.h"
 #include "frontier-detection.h"
 #include "mission.h"
 #include "odometry.h"
@@ -16,9 +17,11 @@
 namespace
 {
     // How close we have to be to the goal before its marked as complete
-    constexpr float kGoalToleranceM = 1.0f;
+    constexpr float kDefaultGoalToleranceM = 0.5f;
+    constexpr float kCoverageGoalToleranceM = 0.25f;
     constexpr float kPi = 3.14159265f;
     constexpr float kNoFrontierScanAngleBeforeCompleteRad = 2.5f * kPi;
+    constexpr uint8_t kNoFrontierScanCyclesBeforeComplete = 40;
     constexpr uint8_t kRejectedFrontierCount = 8;
     constexpr uint8_t kRejectedFrontierRadiusCells = 3;
 
@@ -32,6 +35,7 @@ namespace
     float no_frontier_scan_angle_rad = 0.0f;
     float last_no_frontier_heading_rad = 0.0f;
     bool no_frontier_scan_started = false;
+    uint8_t no_frontier_scan_cycles = 0;
     frontier_goal_t rejected_frontiers[kRejectedFrontierCount] = {};
     uint8_t rejected_frontier_count = 0;
     uint8_t next_rejected_frontier = 0;
@@ -39,6 +43,13 @@ namespace
     bool cells_equal(grid_point_t a, grid_point_t b)
     {
         return a.x == b.x && a.y == b.y;
+    }
+
+    float goal_tolerance()
+    {
+        return active_goal.type == NAV_GOAL_COVERAGE
+                   ? kCoverageGoalToleranceM
+                   : kDefaultGoalToleranceM;
     }
 
     float wrap_angle(float angle)
@@ -53,10 +64,16 @@ namespace
         no_frontier_scan_angle_rad = 0.0f;
         last_no_frontier_heading_rad = 0.0f;
         no_frontier_scan_started = false;
+        no_frontier_scan_cycles = 0;
     }
 
     bool no_frontier_scan_complete(float heading)
     {
+        if (no_frontier_scan_cycles < kNoFrontierScanCyclesBeforeComplete)
+        {
+            ++no_frontier_scan_cycles;
+        }
+
         if (!no_frontier_scan_started)
         {
             last_no_frontier_heading_rad = heading;
@@ -67,7 +84,8 @@ namespace
         no_frontier_scan_angle_rad += fabsf(wrap_angle(heading - last_no_frontier_heading_rad));
         last_no_frontier_heading_rad = heading;
 
-        return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad;
+        return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad ||
+            no_frontier_scan_cycles >= kNoFrontierScanCyclesBeforeComplete;
     }
 
     // Converts a map cell index to world space coordinate of that cell's center.
@@ -90,7 +108,8 @@ namespace
         }
         const float dx = cell_world_x(active_goal.cell.x) - pose.x;
         const float dy = cell_world_y(active_goal.cell.y) - pose.y;
-        return dx * dx + dy * dy <= kGoalToleranceM * kGoalToleranceM;
+        const float tolerance = goal_tolerance();
+        return dx * dx + dy * dy <= tolerance * tolerance;
     }
 
 
@@ -116,6 +135,21 @@ namespace
         reset_no_frontier_scan();
 
         navigation_set_goal({NAV_GOAL_FRONTIER, {frontier.x, frontier.y}});
+        return true;
+    }
+
+    bool choose_coverage_goal()
+    {
+        grid_point_t coverage_goal = {};
+        if (!coverage_planner_get_goal(&coverage_goal))
+        {
+            active_goal = {NAV_GOAL_NONE, {0, 0}};
+            active_path.length = 0;
+            status = NAV_STATUS_EXPLORATION_COMPLETE;
+            return false;
+        }
+
+        navigation_set_goal({NAV_GOAL_COVERAGE, coverage_goal});
         return true;
     }
 
@@ -170,6 +204,7 @@ void navigation_init()
     active_path.length = 0;
     status = NAV_STATUS_IDLE;
     replan_requested = false;
+    coverage_planner_init();
     reset_no_frontier_scan();
     rejected_frontier_count = 0;
     next_rejected_frontier = 0;
@@ -210,6 +245,10 @@ void navigation_task()
         status = NAV_STATUS_GOAL_REACHED;
         if (mission_should_explore())
         {
+            if (active_goal.type == NAV_GOAL_COVERAGE)
+            {
+                coverage_planner_advance_goal();
+            }
             active_goal = {NAV_GOAL_NONE, {0, 0}};
         }
         else
@@ -233,7 +272,24 @@ void navigation_task()
     // Exploration advances by repeatedly selecting the best frontier once the previous frontier goal has been reached.
     if (mission_should_explore() && active_goal.type == NAV_GOAL_NONE)
     {
-        if (!choose_frontier(robot_cell, pose.theta))
+        if (!coverage_planner_started())
+        {
+            if (!choose_frontier(robot_cell, pose.theta))
+            {
+                if (status == NAV_STATUS_EXPLORATION_COMPLETE)
+                {
+                    coverage_planner_start();
+                    reset_no_frontier_scan();
+                }
+                else
+                {
+                    return;
+                }
+            }
+        }
+
+        if (coverage_planner_started() && active_goal.type == NAV_GOAL_NONE &&
+            !choose_coverage_goal())
         {
             return;
         }
@@ -256,10 +312,9 @@ void navigation_task()
     if (active_goal.type != NAV_GOAL_NONE &&
         (active_path.length == 0 || replan_requested))
     {
-        if (!plan_from(robot_cell) && mission_should_explore() &&
-            active_goal.type == NAV_GOAL_FRONTIER)
+        if (!plan_from(robot_cell) && mission_should_explore())
         {
-            navigation_reject_current_frontier();
+            navigation_reject_current_goal();
         }
     }
 }
@@ -345,6 +400,24 @@ void navigation_reject_current_frontier()
     active_path.length = 0;
     replan_requested = false;
     status = NAV_STATUS_IDLE;
+}
+
+void navigation_reject_current_goal()
+{
+    if (active_goal.type == NAV_GOAL_FRONTIER)
+    {
+        navigation_reject_current_frontier();
+        return;
+    }
+
+    if (active_goal.type == NAV_GOAL_COVERAGE)
+    {
+        coverage_planner_reject_goal();
+        active_goal = {NAV_GOAL_NONE, {0, 0}};
+        active_path.length = 0;
+        replan_requested = false;
+        status = NAV_STATUS_IDLE;
+    }
 }
 
 void navigation_set_base(float world_x, float world_y)

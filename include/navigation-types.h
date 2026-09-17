@@ -11,6 +11,7 @@
 typedef enum {
   NAV_GOAL_NONE,
   NAV_GOAL_FRONTIER,
+  NAV_GOAL_COVERAGE,
   NAV_GOAL_BASE
 } navigation_goal_type_t;
 

@@ -25,6 +25,10 @@ void navigation_request_replan();
 // Drop the active exploration frontier and avoid immediately selecting it again.
 void navigation_reject_current_frontier();
 
+// Drop the active exploration target. Frontier targets are rejected; coverage
+// targets are skipped.
+void navigation_reject_current_goal();
+
 // Getter functions.
 bool navigation_has_goal();
 navigation_goal_t navigation_get_goal();
