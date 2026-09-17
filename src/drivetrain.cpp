@@ -28,7 +28,7 @@ namespace
     constexpr int kStopUs = 1500;
     constexpr int kPWM_MAX = 255;
 
-    // TODO: Calibrate these for the actual drivetrain hardware.
+
     constexpr float kWheelDiameterM = 0.065f;
     constexpr float kWheelCircumferenceM = PI * kWheelDiameterM;
     constexpr double kEncoderCpr = 3540;
