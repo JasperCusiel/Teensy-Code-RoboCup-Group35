@@ -48,7 +48,8 @@ void vfh_init()
 void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
                          float weight, float range)
 {
-    int spread = (int)ceilf(atan2f(ROBOT_CLEARANCE, range) / SECTOR_WIDTH);
+    int spread = (int)ceilf(
+        atan2f(ROBOT_CLEARANCE * VFH_INFLATION_SCALE, range) / SECTOR_WIDTH);
     for (int i = -spread; i <= spread; i++)
     {
         int s = sector + i;
