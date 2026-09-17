@@ -21,6 +21,7 @@
 #include "mission.h"
 #include "navigation.h"
 #include "coverage-planner.h"
+#include "imu.h"
 #include "U8g2lib.h"
 
 // Encoder used to scroll through the display menu
@@ -361,6 +362,10 @@ void draw_boot_status()
         display.drawStr(35, 10, "BOOT OKAY");
         display.drawStr(28, 30, "PUSH GO BTN");
         display.drawStr(38, 40, "TO START");
+        // Draw inital heading
+        char buf[20];
+        snprintf(buf, sizeof(buf), "HD:%5.2f", degrees(imu_get_heading()));
+        display.drawStr(38, 50, buf);
     }
     else
     {
