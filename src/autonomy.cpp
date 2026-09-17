@@ -14,12 +14,12 @@
 namespace // Keep variables and helper functions private to this file.
 {
     constexpr float kRecoveryHeadingOffsetRad = 1.0f;
-    constexpr float kObstacleTurnRateRadPerSec = 2.2f;
-    constexpr float kTurnInPlaceSpeedScale = 0.5f;
+    constexpr float kObstacleTurnRateRadPerSec = 2.0f;
+    constexpr float kTurnInPlaceSpeedScale = 0.50f;
     constexpr float kSlowFrontClearanceM = 0.35f;
     constexpr float kHardFrontClearanceM = 0.08f;
-    constexpr float kExplorationScanTurnRateRadPerSec = 1.6f;
-    constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 5;
+    constexpr float kExplorationScanTurnRateRadPerSec = 0.5f;
+    constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 40;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
     constexpr float kTurnInPlaceLinearDeadbandMps = 0.01f;
     constexpr float kTurnInPlaceTurnRateDeadbandRadPerSec = 0.01f;
