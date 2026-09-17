@@ -24,7 +24,7 @@
 #define StartingZoneAngle ((WidthOfSPADsPerZone / 2.0f) * SingleSPADFOV)
 #define ZoneFOVChangePerStep (SingleSPADFOV * NumOfSPADsShiftPerZone)
 
-#define NUM_SECTORS 18
+#define NUM_SECTORS 36
 #define TOTAL_FOV radians(NumOfTOFSensors * HorizontalFOVofSensor)
 
 // Scan bearings are measured from robot forward (+Y), CCW-positive.
