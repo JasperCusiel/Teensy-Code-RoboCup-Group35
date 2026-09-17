@@ -9,10 +9,10 @@
 #include "odometry.h"
 #include "sensors.h"
 #include "smart-servo.h"
+#include "status-leds.h"
 #include "telemetry.h"
 #include "weight-detection.h"
 #include <Arduino.h>
-#include <FastLED.h>
 #include <colour-sensor.h>
 #include <imu.h>
 #include <inductive-sensor.h>
@@ -20,6 +20,7 @@
 #include <limit-switch.h>
 #include <optical-flow.h>
 #include <vfh.h>
+#include "heading-encoder.h"
 
 #include "button.h"
 #include "scheduler.h"
@@ -28,11 +29,6 @@
 
 
 #define GO_BTN A9
-
-#define NUM_LEDS 32
-#define DATA_PIN A12
-CRGB leds[NUM_LEDS];
-
 
 uint32_t last_time_1 = micros();
 
@@ -48,6 +44,7 @@ task_t tasks[] = {
     {get_tof_reading, TOF_FULL_SCAN_PERIOD_US, 0},
     {mapping_task, HZ_TO_US(6), 0},
     {autonomy_task, HZ_TO_US(20), 0},
+    {status_leds_task, HZ_TO_US(1), 0},
     {telemetry_map_task, HZ_TO_US(6), 0}
 };
 
@@ -57,7 +54,6 @@ void setup()
     Serial.begin(115200);
     Wire.begin();
     Wire1.begin();
-
     display_init();
     sensors_init();
     vfh_init();
@@ -67,6 +63,7 @@ void setup()
     drivetrain_init();
     motion_controller_set_output_callback(set_motor_speeds);
     autonomy_init();
+    status_leds_init();
     Serial.print("Base Colour: ");
     if (get_base_color() == COLOR_GREEN)
     {
@@ -77,12 +74,6 @@ void setup()
         Serial.println("BLUE");
     }
 
-
-    FastLED.addLeds<WS2812,DATA_PIN, RGB>(leds,NUM_LEDS);
-    FastLED.setBrightness(128);
-    fill_solid(leds, NUM_LEDS, CRGB::White);
-    FastLED.show();
-
     Serial.println("Push GO BTN to start");
     // Wait for GO button to be pushed to start program
     pinMode(GO_BTN, INPUT);
@@ -91,6 +82,7 @@ void setup()
     {
         delay(1);
     }
+    display_set_page(PAGE_VFH);
     Serial.println("Start");
     mission_start();
     scheduler_init(tasks, NUM_TASKS);
