@@ -4,6 +4,7 @@
 
 #include <imu.h>
 #include <Adafruit_BNO055.h>
+#include "heading-encoder.h"
 
 #define FUSION_RUNNING 5
 #define SYSTEM_STARTED 0x0F
@@ -16,6 +17,13 @@ Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire1);
 
 // Stores imu data, exposes data to other modules.
 imu_data data;
+
+static float wrap_angle(float angle)
+{
+    while (angle > PI) angle -= 2.0f * PI;
+    while (angle < -PI) angle += 2.0f * PI;
+    return angle;
+}
 
 void displaySensorStatus()
 {
@@ -104,7 +112,11 @@ bool imu_init()
 
     // Get first reading and set heading offset (if any, boots heading as zero)
     imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    heading_offset = (float)radians(euler.x());
+    const float raw_heading = radians(euler.x());
+    const float initial_heading = wrap_angle(heading_encoder_get_value());
+
+    heading_offset = raw_heading + initial_heading;
+    data.heading = initial_heading;
 
     return true;
 }
@@ -113,16 +125,8 @@ void imu_task()
 {
     // Get raw data
     imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    double heading = heading_offset - radians(euler.x());
-    // Wrap heading
-    if (heading > PI)
-        heading -= 2 * PI;
-
-    if (heading < -PI)
-        heading += 2 * PI;
-
-    // Store heading
-    data.heading = (float)heading;
+    const float heading = wrap_angle((float)(heading_offset - radians(euler.x())));
+    data.heading = heading;
 
     // linear acceleration (not currently used in EKF)
     imu::Vector<3> accel = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
