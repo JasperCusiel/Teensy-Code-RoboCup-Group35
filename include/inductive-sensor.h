@@ -8,4 +8,6 @@
 // Initialize inductive sensor
 bool inductive_sensor_init();
 
+bool is_real_weight_inductive_sensor();
+
 #endif // ROBOCUP_INDUCTIVE_SENSOR_H

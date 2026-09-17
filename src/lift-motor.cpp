@@ -37,6 +37,9 @@
 #define SERVO_KI 0.1
 #define SERVO_KD 0.05
 
+#define LIFTER_UP_POS   5000
+#define LIFTER_DOWN_POS 0
+
 namespace
 {
     // DCMotorServo takes plain function pointers, which cannot carry a Servo or
@@ -155,4 +158,44 @@ bool lifter_motor_init()
     }
 
     return false;
+}
+
+void lifter_stop()
+{
+    // Command a hold at the current position rather than cutting the PID loop
+    // entirely - this keeps the motor actively holding against gravity/load
+    // rather than free-wheeling.
+    servo1.moveTo(servo1.getActualPosition());
+    servo2.moveTo(servo2.getActualPosition());
+}
+
+void lifter_motor_update()
+{
+    // Must be called every loop iteration to drive the PID
+    servo1.run();
+    servo2.run();
+}
+
+
+void lifter_raise()
+{
+    servo1.moveTo(LIFTER_UP_POS);
+    servo2.moveTo(LIFTER_UP_POS);
+}
+
+void lifter_lower()
+{
+    servo1.moveTo(LIFTER_DOWN_POS);
+    servo2.moveTo(LIFTER_DOWN_POS);
+}
+
+bool is_lifter_reached_top() // +- 10%
+{
+    long pos1 = servo1.getActualPosition();
+    long pos2 = servo2.getActualPosition();
+
+    bool servo1_near_top = abs(pos1 - LIFTER_UP_POS) < LIFTER_UP_POS / 10;
+    bool servo2_near_top = abs(pos2 - LIFTER_UP_POS) < LIFTER_UP_POS / 10;
+
+    return servo1_near_top && servo2_near_top;
 }
