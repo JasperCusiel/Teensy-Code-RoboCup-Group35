@@ -9,7 +9,11 @@ bool weight_detection_init();
 void drawToF_dithered_fast(U8G2 &u8g2,
                            uint16_t d_max,
                            int x0, int y0);
+void draw_detected_weights(U8G2 &u8g,uint16_t d_max);
+void filter();
 void draw_depth_data(U8G2 &u8g2);
 void fill_calibration_matrix();
+bool detect_weight();
+
 
 #endif // ROBOCUP_WEIGHT_DETECTION_H
