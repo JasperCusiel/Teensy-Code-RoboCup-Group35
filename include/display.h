@@ -34,6 +34,7 @@ void display_set_page(Page new_page);
 void draw_map();
 void draw_robot_arrow(int cx, int cy, float angle, uint8_t length);
 void draw_mission();
+void draw_weight_pickup();
 
 
 #endif // ROBOCUP_DISPLAY_H
