@@ -2,23 +2,17 @@
 // Created by Jasper Cusiel on 25/07/2026.
 //
 
-#include <ToF-Sensors.h>
+#include "ToF-Sensors.h"
 #include <math.h>
 #include <stdint.h>
-#include <vfh.h>
+#include "vfh.h"
+#include "math_utils.h"
 
 
 VFH vfh;
 
 namespace
 {
-    float wrap_angle(float angle)
-    {
-        while (angle > PI) angle -= 2.0f * PI;
-        while (angle < -PI) angle += 2.0f * PI;
-        return angle;
-    }
-
     float clamp_angle_to_fov(float angle)
     {
         if (angle < FOV_MIN) return FOV_MIN;
@@ -28,7 +22,7 @@ namespace
 
     float angular_distance(float a, float b)
     {
-        return fabsf(wrap_angle(a - b));
+        return fabsf(wrap_angle_rad(a - b));
     }
 }
 
@@ -78,8 +72,7 @@ void build_histogram()
         {
             continue;
         }
-        if (fabsf(new_lidar_scan->angles[i]) <= FRONT_CLEARANCE_CONE &&
-            r < vfh.forward_clearance)
+        if (fabsf(new_lidar_scan->angles[i]) <= FRONT_CLEARANCE_CONE && r < vfh.forward_clearance)
         {
             vfh.forward_clearance = r;
         }

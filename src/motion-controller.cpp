@@ -6,6 +6,7 @@
 #include "odometry.h"
 #include <math.h>
 #include <wiring.h>
+#include "math_utils.h"
 
 // This module handles the generation of motor wheel speed commands based on commanded heading and speed.
 
@@ -35,13 +36,6 @@ namespace
     float clamp_value(float value, float minimum, float maximum)
     {
         return fminf(maximum, fmaxf(minimum, value));
-    }
-
-    float wrap_angle(float angle)
-    {
-        while (angle > PI) angle -= 2.0f * PI;
-        while (angle < -PI) angle += 2.0f * PI;
-        return angle;
     }
 
     void reset_pid()
@@ -113,7 +107,7 @@ float heading_pid_update(float target_heading, float current_heading, float dt)
 {
     // PID loop to follow commanded heading.
 
-    const float error = wrap_angle(target_heading - current_heading);
+    const float error = wrap_angle_rad(target_heading - current_heading);
 
     heading_integral = clamp_value(heading_integral + error * dt, -1.0f, 1.0f);
     const float derivative = (error - heading_previous_error) / dt;

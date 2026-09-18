@@ -11,6 +11,7 @@
 #include "mapping.h"
 #include <limits.h>
 #include <math.h>
+#include "math_utils.h"
 
 // Navigation module own the high-level target and planned path, other modules query this state.
 
@@ -52,12 +53,6 @@ namespace
                    : kDefaultGoalToleranceM;
     }
 
-    float wrap_angle(float angle)
-    {
-        while (angle > kPi) angle -= 2.0f * kPi;
-        while (angle < -kPi) angle += 2.0f * kPi;
-        return angle;
-    }
 
     void reset_no_frontier_scan()
     {
@@ -81,7 +76,7 @@ namespace
             return false;
         }
 
-        no_frontier_scan_angle_rad += fabsf(wrap_angle(heading - last_no_frontier_heading_rad));
+        no_frontier_scan_angle_rad += fabsf(wrap_angle_rad(heading - last_no_frontier_heading_rad));
         last_no_frontier_heading_rad = heading;
 
         return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad ||

@@ -10,6 +10,7 @@
 #include "vfh.h"
 #include "odometry.h"
 #include <math.h>
+#include "math_utils.h"
 
 namespace // Keep variables and helper functions private to this file.
 {
@@ -30,13 +31,6 @@ namespace // Keep variables and helper functions private to this file.
     // Records if the last VFH turn direction was left (+1) or right (-1), used to choose escape direction to spin when VFH can't find a free direction in the FOV.
     uint8_t recovery_turn_cycles = 0;
 
-    // Normalize heading angles so difference is always smallest rotation.
-    float wrap_angle(float angle)
-    {
-        while (angle > PI) angle -= 2.0f * PI;
-        while (angle < -PI) angle += 2.0f * PI;
-        return angle;
-    }
 
     void record_recovery_turn()
     {
@@ -68,7 +62,7 @@ namespace // Keep variables and helper functions private to this file.
         }
 
         // Convert world frame target heading (from pure pursuit) into VFH robot frame.
-        const float target_relative = wrap_angle(target.heading - pose.theta);
+        const float target_relative = wrap_angle_rad(target.heading - pose.theta);
         vfh_set_target_angle(target_relative);
 
         // Run obstacle avoidance every cycle so it can't be bypassed by pure pursuit path follower
@@ -84,7 +78,7 @@ namespace // Keep variables and helper functions private to this file.
             const float recovery_direction = last_steering_direction;
             record_recovery_turn();
             return {
-                wrap_angle(pose.theta + recovery_direction * kRecoveryHeadingOffsetRad),
+                wrap_angle_rad(pose.theta + recovery_direction * kRecoveryHeadingOffsetRad),
                 0.0f,
                 recovery_direction * kObstacleTurnRateRadPerSec,
                 false
@@ -107,8 +101,8 @@ namespace // Keep variables and helper functions private to this file.
         // Target command has been verified to be "safe"
         velocity_command_t safe = target;
         // Convert robot frame back to world frame
-        safe.heading = wrap_angle(pose.theta + steering_relative);
-        const float deflection = fabsf(wrap_angle(steering_relative - target_relative));
+        safe.heading = wrap_angle_rad(pose.theta + steering_relative);
+        const float deflection = fabsf(wrap_angle_rad(steering_relative - target_relative));
 
         // Slow down based on obstical avoidance deflection amount, larger VFH avoidance -> slower speed.
         // At 90 degree or more, turn in place instead of arc.
