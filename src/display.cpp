@@ -14,6 +14,7 @@
 #include "occupancy-grid.h"
 #include "mapping.h"
 #include "vfh.h"
+#include "weight-pickup.h"
 
 #include <Arduino.h>
 #include <Encoder.h>
@@ -34,7 +35,7 @@
 #define HISTOGRAM_Y 63
 
 // Total number of menu items to show
-#define MENU_ITEMS_COUNT 6
+#define MENU_ITEMS_COUNT 7
 
 // Max number of lines to shows in scrolling list for sensor booting proccess
 #define MAX_LINES 7
@@ -55,6 +56,7 @@ const char* menuItems[] = {
     "8x8 ToF",
     "Map",
     "Mission"
+    "Pickup State"
 };
 
 // Keep track of which page we are on
@@ -162,6 +164,8 @@ void display_draw()
         case PAGE_MISSION: draw_mission();
             break;
         case PAGE_BOOT_STATUS: draw_boot_status();
+            break;
+        case PAGE_WEIGHT_PICKUP: draw_weight_pickup();
             break;
         }
     }
@@ -497,4 +501,54 @@ void draw_mission()
              coverage_planner_goal_index(),
              coverage_planner_goal_count());
     display.drawStr(2, 58, buf);
+}
+
+
+void draw_weight_pickup()
+{
+    // Draws the weight pickup state machine's current state
+    display.drawStr(2, 10, "STATE:");
+
+    switch (weight_pickup_get_state())
+    {
+    case PICKUP_STATUS_IDLE:
+        display.drawStr(50, 10, "IDLE");
+        break;
+    case PICKUP_STATUS_ALIGNING:
+        display.drawStr(50, 10, "ALIGNING");
+        break;
+    case PICKUP_STATUS_WEIGHT_LOST:
+        display.drawStr(50, 10, "FINDING");
+        break;
+    case PICKUP_STATUS_CHECKING_WEIGHT_TYPE:
+        display.drawStr(50, 10, "CHECK TYPE");
+        break;
+    case PICKUP_STATUS_FAKE_WEIGHT_DETECTED:
+        display.drawStr(50, 10, "FAKE DETECTED");
+        break;
+    case PICKUP_STATUS_FAKE_WEIGHT_LIFTING:
+        display.drawStr(50, 10, "FAKE SERVO UP");
+        break;
+    case PICKUP_STATUS_FAKE_WEIGHT_MOVING:
+        display.drawStr(50, 10, "FAKE REJECTING");
+        break;
+    case PICKUP_STATUS_FAKE_WEIGHT_CLEAR_DELAY:
+        display.drawStr(50, 10, "FAKE REJECTING");
+        break;
+    case PICKUP_STATUS_LOWERING_RAILS:
+        display.drawStr(50, 10, "LOWERING");
+        break;
+    case PICKUP_STATUS_LOADING_WEIGHT:
+        display.drawStr(50, 10, "LOADING");
+        break;
+    case PICKUP_STATUS_LOADING_WEIGHT_CONFIRM_DELAY:
+        display.drawStr(50, 10, "LOADING");
+        break;
+    case PICKUP_STATUS_LIFTING_WEIGHT:
+        display.drawStr(50, 10, "LIFTING");
+        break;
+    default:
+        display.drawStr(50, 10, "UNKNOWN");
+        break;
+    }
 }

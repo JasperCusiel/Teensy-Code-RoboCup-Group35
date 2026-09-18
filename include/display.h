@@ -16,6 +16,7 @@ enum Page
     PAGE_8X8_TOF,
     PAGE_MAP,
     PAGE_MISSION,
+    PAGE_WEIGHT_PICKUP,
     PAGE_BOOT_STATUS
 };
 

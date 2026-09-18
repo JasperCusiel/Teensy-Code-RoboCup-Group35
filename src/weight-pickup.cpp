@@ -22,11 +22,15 @@
 #define END_STOP_B_PIN 1
 #define WEIGHT_UNDETECTED_TIMEOUT_MS 5000
 #define SEARCHING_TIMEOUT_MS 5000
+#define LOST 0
+#define LEFT 1
+#define CENTRE 2
+#define RIGHT 3
 
 static weight_pickup_state_t current_state = PICKUP_STATUS_IDLE;
 static short weight_type_check_cycle = 0;
 static unsigned long aligning_start_time = 0;
-static int weight_pos = 0;
+static int weight_pos = LOST;
 static unsigned long fake_weight_clear_start = 0;
 static unsigned long loading_confirm_start = 0;
 static unsigned long weight_undetected_time = 0;
@@ -57,7 +61,7 @@ void weight_pickup_state_update()
             break;
         }
 
-        int weight_pos = get_weight_position();       //to do --------------------------------------------------------------------
+        weight_pos = get_weight_position();       //to do --------------------------------------------------------------------
 
         if (weight_pos == LEFT) {
             //turn left
@@ -65,15 +69,15 @@ void weight_pickup_state_update()
         } else if (weight_pos == RIGHT) {
             //turn right
             weight_undetected_time = 0;
-        } else if (weight_pos == CENTRE){         // if in middle or no longer in FOV
+        } else if (weight_pos == CENTRE){         // if in middle
             //move forward
             weight_undetected_time = 0;
-        } else if (weight_pos == LOST) {
+        } else if (weight_pos == LOST) {  // cannot see weight; may be under robot so keep driving forward for a set time
             //move forward slowly
             if (weight_undetected_time == 0) {
                 weight_undetected_time = millis();
             } else if (millis() - weight_undetected_time > WEIGHT_UNDETECTED_TIMEOUT_MS) {
-                // been stuck in "undetected" for too long, give up on aligning
+                // stuck in "undetected" for too long turn on spot to search for weight
                 weight_undetected_time = 0;
                 searching_start_time = millis();
                 current_state = PICKUP_STATUS_WEIGHT_LOST;
@@ -83,7 +87,7 @@ void weight_pickup_state_update()
         break;
 
     case PICKUP_STATUS_WEIGHT_LOST:
-        int weight_pos = get_weight_position(); 
+        weight_pos = get_weight_position(); 
         if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS) {
             mission_report_pickup_complete(false);
             current_state = PICKUP_STATUS_IDLE;
@@ -181,5 +185,10 @@ void weight_pickup_state_update()
         lifter_raise();
         break;
     }
+}
+
+weight_pickup_state_t weight_pickup_get_state(void)
+{
+    return current_state;
 }
 

@@ -24,4 +24,6 @@ typedef enum {
 
 void weight_pickup_state_update();
 
+weight_pickup_state_t weight_pickup_get_state(void);
+
 #endif // ROBOCUP_WEIGHT_PICKUP_H
