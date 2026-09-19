@@ -16,8 +16,8 @@
 
 #define WEIGHT_TYPE_CHECK_CYCLES 10
 #define ALIGNING_TIMEOUT_MS 10000
-#define FAKE_WEIGHT_CLEAR_DELAY_MS 500
-#define LOADING_WEIGHT_DELAY_MS 500
+#define FAKE_WEIGHT_CLEAR_DELAY_MS 2000
+#define LOADING_WEIGHT_DELAY_MS 1000
 #define END_STOP_A_PIN 0
 #define END_STOP_B_PIN 1
 #define WEIGHT_UNDETECTED_TIMEOUT_MS 5000
@@ -42,9 +42,15 @@ void weight_pickup_state_update()
 {
     switch (current_state) {
     case PICKUP_STATUS_IDLE:
-      if (mission_get_state() == MISSION_WEIGHT_DETECTED) {
-        aligning_start_time = millis();
-        current_state = PICKUP_STATUS_ALIGNING;
+        if (mission_get_state() == MISSION_WEIGHT_DETECTED) {
+            aligning_start_time = millis();
+            current_state = PICKUP_STATUS_ALIGNING;
+            break;
+        }
+        if (is_weight_detected_ir_reflective()) {
+            mission_report_weight_detected();
+            //slow down drive straight
+            current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
         }
         break;
 
@@ -61,7 +67,7 @@ void weight_pickup_state_update()
             break;
         }
 
-        weight_pos = get_weight_position();       //to do --------------------------------------------------------------------
+        weight_pos = 2;//get_weight_position();       //to do --------------------------------------------------------------------
 
         if (weight_pos == LEFT) {
             //turn left
@@ -87,7 +93,7 @@ void weight_pickup_state_update()
         break;
 
     case PICKUP_STATUS_WEIGHT_LOST:
-        weight_pos = get_weight_position(); 
+        weight_pos = 0;//get_weight_position(); 
         if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS) {
             mission_report_pickup_complete(false);
             current_state = PICKUP_STATUS_IDLE;
@@ -151,11 +157,11 @@ void weight_pickup_state_update()
     case PICKUP_STATUS_LOWERING_RAILS:
         if (read_limit_switch(END_STOP_A_PIN) && read_limit_switch(END_STOP_B_PIN)) {
             lifter_stop();
+            set_front_servo_up();
             current_state = PICKUP_STATUS_LOADING_WEIGHT;
             break;
         }
         lifter_lower();
-        set_front_servo_up();
         break;
 
 

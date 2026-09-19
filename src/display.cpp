@@ -15,6 +15,8 @@
 #include "mapping.h"
 #include "vfh.h"
 #include "weight-pickup.h"
+#include "ir-reflective.h"
+#include "lift-motor.h"
 
 #include <Arduino.h>
 #include <Encoder.h>
@@ -209,6 +211,12 @@ void draw_debug()
     {
         display.drawStr(0, 10 * i, lines[i]);
     }
+
+    char buf[20];
+    snprintf(buf, sizeof(buf), "L1:%ld", lifter_get_position1());
+    display.drawStr(70, 44, buf);
+    snprintf(buf, sizeof(buf), "L2:%ld", lifter_get_position2());
+    display.drawStr(70, 56, buf);
 }
 
 int angle_to_u8g2(float angle)
@@ -516,6 +524,10 @@ void draw_weight_pickup()
         break;
     case PICKUP_STATUS_ALIGNING:
         display.drawStr(50, 10, "ALIGNING");
+        char buf[20];
+        snprintf(buf, sizeof(buf), "A13:%d", analogRead(A13));
+        display.drawStr(2, 24, buf);
+        display.drawStr(2, 36, is_weight_detected_ir_reflective() ? "IR: DETECTED" : "IR: ---");
         break;
     case PICKUP_STATUS_WEIGHT_LOST:
         display.drawStr(50, 10, "FINDING");

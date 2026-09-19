@@ -22,6 +22,7 @@
 #include <optical-flow.h>
 #include <vfh.h>
 #include "heading-encoder.h"
+#include "IR-reflective.h"
 
 #include "button.h"
 #include "scheduler.h"
@@ -47,8 +48,9 @@ task_t tasks[] = {
     {autonomy_task, HZ_TO_US(20), 0},
     {telemetry_map_task, HZ_TO_US(6), 0},
     {lifter_motor_update, HZ_TO_US(100), 0},
-    {weight_pickup_state_update, HZ_TO_US(10), 0}
-    {status_leds_task, HZ_TO_US(1), 0}
+    {weight_pickup_state_update, HZ_TO_US(10), 0},
+    {status_leds_task, HZ_TO_US(1), 0},
+    {ir_reflective_update, HZ_TO_US(5), 0}
 };
 
 

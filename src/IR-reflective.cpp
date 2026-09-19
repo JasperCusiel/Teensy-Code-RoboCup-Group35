@@ -6,7 +6,7 @@
 #include <core_pins.h>
 
 #define SENSE_PIN A13
-#define SENSE_THRESHOLD 30
+#define SENSE_THRESHOLD 20
 #define SAMPLE_COUNT 3
 
 static int16_t buffer[3] = {0, 0, 0};
@@ -25,7 +25,7 @@ void ir_reflective_update()
 {
     // Moving average three readings
     buffer[buf_index] = analogRead(SENSE_PIN);
-    buf_index = (buf_index + 1) % 3;
+    buf_index = (buf_index + 1) % SAMPLE_COUNT;
     
     int32_t sum = 0;
     for (uint8_t i = 0; i < SAMPLE_COUNT; i++) sum += buffer[i];

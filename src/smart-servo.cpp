@@ -4,6 +4,7 @@
 
 #include <smart-servo.h>
 #include <HerkulexServo.h>
+#include "display.h"
 
 // The module controls the herkulex smart servos.
 
@@ -14,10 +15,10 @@
 
 
 //need to set these values
-#define FRONT_SERVO_UP_POS   100
-#define FRONT_SERVO_DOWN_POS 0
-#define BACK_SERVO_UP_POS    100
-#define BACK_SERVO_DOWN_POS  0
+#define FRONT_SERVO_UP_POS   600
+#define FRONT_SERVO_DOWN_POS 800//400
+#define BACK_SERVO_UP_POS    700
+#define BACK_SERVO_DOWN_POS  400
 #define SERVO_MOVE_PLAYTIME  50
 
 HerkulexServoBus herkulex_bus(SERIAL_BUS);
@@ -33,7 +34,6 @@ HerkulexStatusDetail detail;
 
 bool smart_servo_init()
 {
-    // Start all servos and check the started okay.
     SERIAL_BUS.begin(SERIAL_BAUD);
     uint8_t num_errors = 0;
 
@@ -44,16 +44,18 @@ bool smart_servo_init()
                 resp, servo_id[i], HerkulexCommand::Stat);
             !success)
         {
-            Serial.printf("Servo %d no response\n", i);
+            char buf[17];
+            snprintf(buf, sizeof(buf), "SV%d NO RESP", i);
+            display_log(buf);
             num_errors++;
             continue;
         }
         servos[i]->getStatus(servo_error, detail);
 
-        Serial.printf("Servo %d error: 0x%02X detail: 0x%02X\n",
-                      i,
-                      (uint8_t)servo_error,
-                      (uint8_t)detail);
+        char buf[17];
+        snprintf(buf, sizeof(buf), "SV%d E:%02X D:%02X", i,
+                 (uint8_t)servo_error, (uint8_t)detail);
+        display_log(buf);
 
         servos[i]->setLedColor(HerkulexLed::Green);
         servos[i]->setTorqueOn();
@@ -72,29 +74,29 @@ bool smart_servo_init()
 
 void set_front_servo_up()
 {
-    servo_a.setPosition(FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+    servo_b.setPosition(FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
 }
 
 void set_front_servo_down()
 {
-    servo_a.setPosition(FRONT_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
+    servo_b.setPosition(FRONT_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
 }
 
 void set_back_servo_up()
 {
-    servo_b.setPosition(BACK_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+    servo_a.setPosition(BACK_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
 }
 
 void set_back_servo_down()
 {
-    servo_b.setPosition(BACK_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
+    servo_a.setPosition(BACK_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
 }
 
 bool is_front_servo_in_position()
 {
     HerkulexStatusError status_error;
     HerkulexStatusDetail status_detail;
-    servo_a.getStatus(status_error, status_detail);
+    servo_b.getStatus(status_error, status_detail);
     return (status_detail & HerkulexStatusDetail::InPosition) != HerkulexStatusDetail::None;
 }
 
@@ -102,6 +104,6 @@ bool is_back_servo_in_position()
 {
     HerkulexStatusError status_error;
     HerkulexStatusDetail status_detail;
-    servo_b.getStatus(status_error, status_detail);
+    servo_a.getStatus(status_error, status_detail);
     return (status_detail & HerkulexStatusDetail::InPosition) != HerkulexStatusDetail::None;
 }

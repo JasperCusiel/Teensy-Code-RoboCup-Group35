@@ -13,5 +13,7 @@ void lifter_raise();
 void lifter_lower();
 void lifter_stop();
 bool is_lifter_reached_top();
+long lifter_get_position1();
+long lifter_get_position2();
 
 #endif // ROBOCUP_LIFT_MOTOR_H
