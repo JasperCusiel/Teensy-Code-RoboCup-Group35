@@ -53,6 +53,7 @@ task_t tasks[] = {
     {status_leds_task, HZ_TO_US(1), 0},
     {ir_reflective_update, HZ_TO_US(5), 0},
     {weight_dropoff_state_update, HZ_TO_US(10), 0}
+    {status_leds_task, HZ_TO_US(1), 0}
 };
 
 
