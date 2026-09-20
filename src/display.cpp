@@ -211,12 +211,6 @@ void draw_debug()
     {
         display.drawStr(0, 10 * i, lines[i]);
     }
-
-    char buf[20];
-    snprintf(buf, sizeof(buf), "L1:%ld", lifter_get_position1());
-    display.drawStr(70, 44, buf);
-    snprintf(buf, sizeof(buf), "L2:%ld", lifter_get_position2());
-    display.drawStr(70, 56, buf);
 }
 
 int angle_to_u8g2(float angle)

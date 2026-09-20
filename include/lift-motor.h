@@ -11,8 +11,9 @@ bool lifter_motor_init();
 void lifter_motor_update();
 void lifter_raise();
 void lifter_lower();
+void lifter_move_middle();
 void lifter_stop();
-bool is_lifter_reached_top();
+bool is_lifter_reached_target();
 long lifter_get_position1();
 long lifter_get_position2();
 

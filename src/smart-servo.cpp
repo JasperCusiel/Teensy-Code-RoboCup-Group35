@@ -18,7 +18,7 @@
 #define FRONT_SERVO_UP_POS   600
 #define FRONT_SERVO_DOWN_POS 800//400
 #define BACK_SERVO_UP_POS    700
-#define BACK_SERVO_DOWN_POS  400
+#define BACK_SERVO_DOWN_POS  600
 #define SERVO_MOVE_PLAYTIME  50
 
 HerkulexServoBus herkulex_bus(SERIAL_BUS);

@@ -48,9 +48,11 @@ void weight_pickup_state_update()
             break;
         }
         if (is_weight_detected_ir_reflective()) {
-            mission_report_weight_detected();
-            //slow down drive straight
-            current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
+            if (is_lifter_reached_target() && (mission_get_state() == MISSION_EXPLORE)) {
+                mission_report_weight_detected();
+                //slow down drive straight
+                current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
+            }
         }
         break;
 
@@ -105,7 +107,7 @@ void weight_pickup_state_update()
             current_state = PICKUP_STATUS_ALIGNING;
             break;
         } else {
-            //turn on spot
+            //look for weight eg turn on spot
         }
         break;
 
@@ -129,6 +131,7 @@ void weight_pickup_state_update()
 
     case PICKUP_STATUS_FAKE_WEIGHT_DETECTED:
         set_front_servo_up();
+        lifter_raise();
         current_state = PICKUP_STATUS_FAKE_WEIGHT_LIFTING;
         break;
 
@@ -138,6 +141,7 @@ void weight_pickup_state_update()
             current_state = PICKUP_STATUS_FAKE_WEIGHT_MOVING;
         }
         break;
+
 
     case PICKUP_STATUS_FAKE_WEIGHT_MOVING:
         if (!is_weight_detected_ir_reflective()) {
@@ -162,6 +166,12 @@ void weight_pickup_state_update()
             break;
         }
         lifter_lower();
+        if (is_lifter_reached_target) {
+            lifter_stop();
+            set_front_servo_up();
+            current_state = PICKUP_STATUS_LOADING_WEIGHT;
+            break;
+        }
         break;
 
 
@@ -184,11 +194,11 @@ void weight_pickup_state_update()
 
 
     case PICKUP_STATUS_LIFTING_WEIGHT:
-        if (is_lifter_reached_top()) {
+        if (is_lifter_reached_target()) {
             mission_report_pickup_complete(true);
             current_state = PICKUP_STATUS_IDLE;
         }
-        lifter_raise();
+        lifter_move_middle();
         break;
     }
 }

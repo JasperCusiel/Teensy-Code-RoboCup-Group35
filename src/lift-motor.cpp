@@ -154,7 +154,7 @@ bool lifter_motor_init()
 
     if (home_servo(&servo1) && home_servo(&servo2))
     {
-        lifter_raise();
+        lifter_move_middle();
         return true;
     }
 
@@ -187,22 +187,22 @@ void lifter_raise()
 void lifter_lower()
 {
     servo1.moveTo(LIFTER_DOWN_POS);
-    servo2.moveTo(LIFTER_UP_POS - LIFTER_DOWN_POS /2);
+    servo2.moveTo(LIFTER_DOWN_POS);
 }
 
 void lifter_move_middle()
 {
-    servo1.moveTo(LIFTER_DOWN_POS);
-    servo2.moveTo(LIFTER_DOWN_POS);
+    servo1.moveTo(LIFTER_UP_POS / 2);
+    servo2.moveTo(LIFTER_UP_POS / 2);
 }
 
-bool is_lifter_reached_top() // +- 10%
+bool is_lifter_reached_target() // +- 10%
 {
     long pos1 = servo1.getActualPosition();
     long pos2 = servo2.getActualPosition();
 
-    bool servo1_near_top = abs(pos1 - LIFTER_UP_POS) < abs(LIFTER_UP_POS) / 10;
-    bool servo2_near_top = abs(pos2 - LIFTER_UP_POS) < abs(LIFTER_UP_POS) / 10;
+    bool servo1_near_top = abs(pos1 - servo1.getRequestedPosition()) < abs(LIFTER_UP_POS) / 10;
+    bool servo2_near_top = abs(pos2 - servo2.getRequestedPosition()) < abs(LIFTER_UP_POS) / 10;
 
     return servo1_near_top && servo2_near_top;
 }
