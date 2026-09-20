@@ -1,20 +1,31 @@
-#include "Wire.h"
-#include <Arduino.h>
 #include "ToF-Sensors.h"
+#include "Wire.h"
+#include "autonomy.h"
 #include "display.h"
+#include "drivetrain.h"
+#include "mapping.h"
+#include "mission.h"
+#include "motion-controller.h"
+#include "odometry.h"
+#include "sensors.h"
 #include "smart-servo.h"
-#include <imu.h>
-#include <optical-flow.h>
+#include "status-leds.h"
+#include "telemetry.h"
+#include "weight-detection.h"
+#include "weight-pickup.h"
+#include <Arduino.h>
 #include <colour-sensor.h>
+#include <imu.h>
 #include <inductive-sensor.h>
 #include <lift-motor.h>
 #include <limit-switch.h>
+#include <optical-flow.h>
 #include <vfh.h>
-#include "odometry.h"
-#include "weight-detection.h"
-#include "sensors.h"
-#include "mapping.h"
+#include "heading-encoder.h"
+#include "IR-reflective.h"
+#include "weight-dropoff.h"
 
+#include "button.h"
 #include "scheduler.h"
 #define HZ_TO_US(x) (1000000UL / (x)) // convert hz to micro seconds
 #define NUM_TASKS (sizeof(tasks) / sizeof(tasks[0]))
@@ -27,75 +38,66 @@ uint32_t last_time_1 = micros();
 float state[3];
 
 task_t tasks[] = {
-  { odometry_update,  HZ_TO_US(95), 0 },
-  { compute_vfh,  HZ_TO_US(10), 0 },
-  { draw,   HZ_TO_US(5),  0 },
-{ update_input,   HZ_TO_US(5),  0 },
-  { get_tof_reading, HZ_TO_US(6),  0 },
-//{ print_ekf_pose, HZ_TO_US(1),  0 },
-{ imu_get_reading, HZ_TO_US(95),  0 },
-//{ mapping_task, HZ_TO_US(6),  0 }
+    {imu_task, HZ_TO_US(95), 0},
+    {odometry_update, HZ_TO_US(95), 0},
+    {autonomy_motion_task, HZ_TO_US(95), 0},
+    {drivetrain_update, HZ_TO_US(95), 0},
+    {display_draw, HZ_TO_US(5), 0},
+    {update_input, HZ_TO_US(5), 0},
+    {get_tof_reading, TOF_FULL_SCAN_PERIOD_US, 0},
+    {mapping_task, HZ_TO_US(6), 0},
+    {autonomy_task, HZ_TO_US(20), 0},
+    {telemetry_map_task, HZ_TO_US(6), 0},
+    {lifter_motor_update, HZ_TO_US(100), 0},
+    {weight_pickup_state_update, HZ_TO_US(10), 0},
+    {status_leds_task, HZ_TO_US(1), 0},
+    {ir_reflective_update, HZ_TO_US(5), 0},
+    {weight_dropoff_state_update, HZ_TO_US(10), 0}
+    {status_leds_task, HZ_TO_US(1), 0}
 };
 
 
-void scanI2C() {
-  display_log("Scanning I2C bus...");
-
-  uint8_t count = 0;
-  char buffer[18];
-
-  for (uint8_t addr = 0x03; addr < 0x78; addr++) {
-    Wire1.beginTransmission(addr);
-    uint8_t error = Wire1.endTransmission();
-
-    if (error == 0) {
-      snprintf(buffer, sizeof(buffer), "0x%02X found", addr);
-      display_log(buffer);
-      delay(150);
-      count++;
+void setup()
+{
+    Serial.begin(115200);
+    Wire.begin();
+    Wire1.begin();
+    display_init();
+    sensors_init();
+    vfh_init();
+    odometry_init();
+    mapping_init();
+    telemetry_init();
+    drivetrain_init();
+    motion_controller_set_output_callback(set_motor_speeds);
+    autonomy_init();
+    status_leds_init();
+    Serial.print("Base Colour: ");
+    if (get_base_color() == COLOR_GREEN)
+    {
+        Serial.println("GREEN");
     }
-  }
+    else
+    {
+        Serial.println("BLUE");
+    }
 
-  if (count == 0)
-    display_log("No I2C devices");
-  else {
-    snprintf(buffer, sizeof(buffer), "%d devices found", count);
-    display_log(buffer);
-  }
+    Serial.println("Push GO BTN to start");
+    // Wait for GO button to be pushed to start program
+    pinMode(GO_BTN, INPUT);
+
+    while (read_button(GO_BTN))
+    {
+        delay(1);
+    }
+    display_set_page(PAGE_VFH);
+    Serial.println("Start");
+    mission_start();
+    scheduler_init(tasks, NUM_TASKS);
 }
 
 
-void setup() {
-  Serial.begin(115200);
-  Wire.begin();
-  Wire1.begin();
-
-  display_init();
-  sensors_init();
-  vfh_init();
-  odometry_init();
-  mapping_init();
-
-  // scanI2C();
-
-  // Calibration
-  //get_ToFCalibration();
-
-  Serial.println("Push GO BTN to start");
-  // Wait for GO button to be pushed to start program
-  pinMode(GO_BTN, INPUT);
-
-  while (read_button(GO_BTN)) {
-    delay(1);
-  }
-  Serial.println("Start");
-
-  float target_angle = 0.0f;
-  set_target_angle(target_angle);
-}
-
-
-
-void loop() {
-  scheduler_run(tasks, NUM_TASKS);
+void loop()
+{
+    scheduler_run(tasks, NUM_TASKS);
 }
