@@ -8,6 +8,7 @@
 #include "navigation.h"
 #include "pure-pursuit.h"
 #include "vfh.h"
+#include "weight-pickup.h"
 #include "odometry.h"
 #include <math.h>
 #include "math_utils.h"
@@ -20,6 +21,7 @@ namespace // Keep variables and helper functions private to this file.
     constexpr float kSlowFrontClearanceM = 0.35f;
     constexpr float kHardFrontClearanceM = 0.08f;
     constexpr float kExplorationScanTurnRateRadPerSec = 0.5f;
+    constexpr float kWeightApproachSpeedMps = 0.08f;
     constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 40;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
     constexpr float kTurnInPlaceLinearDeadbandMps = 0.01f;
@@ -147,6 +149,23 @@ namespace // Keep variables and helper functions private to this file.
             false
         };
     }
+
+    velocity_command_t weight_approach_command(const pose_t& pose)
+    {
+        return {
+            pose.theta,
+            kWeightApproachSpeedMps,
+            0.0f,
+            false
+        };
+    }
+
+    bool should_drive_towards_weight()
+    {
+        const weight_pickup_state_t pickup_state = weight_pickup_get_state();
+        return pickup_state == PICKUP_STATUS_IDLE ||
+            pickup_state == PICKUP_STATUS_ALIGNING;
+    }
 } // namespace
 
 void autonomy_init()
@@ -175,6 +194,14 @@ void autonomy_task()
 
     // Select or update navigation goal and path
     navigation_task();
+
+    if (mission_get_state() == MISSION_WEIGHT_DETECTED)
+    {
+        safe_command = should_drive_towards_weight()
+            ? weight_approach_command(current_pose)
+            : velocity_command_t{current_pose.theta, 0.0f, 0.0f, true};
+        return;
+    }
 
     // Get heading and forward speed from pure pursuit
     const path_t* path = navigation_get_path();

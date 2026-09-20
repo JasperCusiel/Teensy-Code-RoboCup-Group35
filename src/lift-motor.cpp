@@ -30,14 +30,14 @@
 #define HOMING_SPEED 200
 #define LIMIT_SWITCH_BACK_OFF 2000
 #define PWM_SKIP 60 //was 80
-#define ACCURACY 1000
+#define ACCURACY 100
 
 // PID tuning values
-#define SERVO_KP 0.07 //was 0.1
-#define SERVO_KI 0.01 //was 0.1
-#define SERVO_KD 0.005 //was 0.05
+#define SERVO_KP 0.1 //was 0.1
+#define SERVO_KI 0.1 //was 0.1
+#define SERVO_KD 0.05 //was 0.05
 
-#define LIFTER_UP_POS   -26000
+#define LIFTER_UP_POS   (-26000)
 #define LIFTER_DOWN_POS 0
 
 namespace
@@ -198,13 +198,7 @@ void lifter_move_middle()
 
 bool is_lifter_reached_target() // +- 10%
 {
-    long pos1 = servo1.getActualPosition();
-    long pos2 = servo2.getActualPosition();
-
-    bool servo1_near_top = abs(pos1 - servo1.getRequestedPosition()) < abs(LIFTER_UP_POS) / 10;
-    bool servo2_near_top = abs(pos2 - servo2.getRequestedPosition()) < abs(LIFTER_UP_POS) / 10;
-
-    return servo1_near_top && servo2_near_top;
+    return servo1.finished() && servo2.finished();
 }
 
 long lifter_get_position1()

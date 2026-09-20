@@ -42,21 +42,25 @@ void weight_pickup_state_update()
     switch (current_state)
     {
     case PICKUP_STATUS_IDLE:
-        if (mission_get_state() == MISSION_WEIGHT_DETECTED) {
-            aligning_start_time = millis();
-            current_state = PICKUP_STATUS_ALIGNING;
-            break;
-        }
-        if (is_weight_detected_ir_reflective()) {
-            if (is_lifter_reached_target() && (mission_get_state() == MISSION_EXPLORE)) {
-                mission_report_weight_detected();
-                //slow down drive straight
-                current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
-            }
         if (mission_get_state() == MISSION_WEIGHT_DETECTED)
         {
             aligning_start_time = millis();
             current_state = PICKUP_STATUS_ALIGNING;
+            break;
+        }
+        if (is_weight_detected_ir_reflective())
+        {
+            if (is_lifter_reached_target() && (mission_get_state() == MISSION_EXPLORE))
+            {
+                mission_report_weight_detected();
+                //slow down drive straight
+                current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
+            }
+            if (mission_get_state() == MISSION_WEIGHT_DETECTED)
+            {
+                aligning_start_time = millis();
+                current_state = PICKUP_STATUS_ALIGNING;
+            }
         }
         break;
 
@@ -76,9 +80,9 @@ void weight_pickup_state_update()
             break;
         }
 
-        weight_pos = 2;//get_weight_position();       //to do --------------------------------------------------------------------
+        weight_pos = 2;
+        //get_weight_position();       //to do --------------------------------------------------------------------
 
-        if (weight_pos == LEFT) {
         //weight_pos = get_weight_position(); //to do --------------------------------------------------------------------
         weight_pos = CENTRE;
         if (weight_pos == LEFT)
@@ -117,24 +121,28 @@ void weight_pickup_state_update()
         break;
 
     case PICKUP_STATUS_WEIGHT_LOST:
-        weight_pos = 0;//get_weight_position(); 
-        if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS) {
-        weight_pos = CENTRE;
-        // weight_pos = get_weight_position();
+        weight_pos = 0; //get_weight_position();
         if (millis() - searching_start_time > SEARCHING_TIMEOUT_MS)
         {
-            mission_report_pickup_complete(false);
-            current_state = PICKUP_STATUS_IDLE;
-            break;
-        }
-        if (weight_pos != LOST)
-        {
-            //stop turning
-            searching_start_time = 0;
-            current_state = PICKUP_STATUS_ALIGNING;
-            break;
-        } else {
-            //look for weight eg turn on spot
+            weight_pos = CENTRE;
+            // weight_pos = get_weight_position();
+            if (millis() - searching_start_time > SEARCHING_TIMEOUT_MS)
+            {
+                mission_report_pickup_complete(false);
+                current_state = PICKUP_STATUS_IDLE;
+                break;
+            }
+            if (weight_pos != LOST)
+            {
+                //stop turning
+                searching_start_time = 0;
+                current_state = PICKUP_STATUS_ALIGNING;
+                break;
+            }
+            else
+            {
+                //look for weight eg turn on spot
+            }
         }
         else
         {
@@ -193,16 +201,9 @@ void weight_pickup_state_update()
         break;
 
     case PICKUP_STATUS_LOWERING_RAILS:
-        if (read_limit_switch(END_STOP_A_PIN) && read_limit_switch(END_STOP_B_PIN))
-        {
-            lifter_stop();
-            set_front_servo_up();
-            current_state = PICKUP_STATUS_LOADING_WEIGHT;
-            break;
-        }
         lifter_lower();
-        if (is_lifter_reached_target) {
-            lifter_stop();
+        if (is_lifter_reached_target)
+        {
             set_front_servo_up();
             current_state = PICKUP_STATUS_LOADING_WEIGHT;
             break;
@@ -230,8 +231,7 @@ void weight_pickup_state_update()
 
 
     case PICKUP_STATUS_LIFTING_WEIGHT:
-        if (is_lifter_reached_target()) {
-        if (is_lifter_reached_top())
+        if (is_lifter_reached_target())
         {
             mission_report_pickup_complete(true);
             current_state = PICKUP_STATUS_IDLE;
@@ -241,7 +241,8 @@ void weight_pickup_state_update()
     }
 }
 
-weight_pickup_state_t weight_pickup_get_state(void)
+
+weight_pickup_state_t weight_pickup_get_state()
 {
     return current_state;
 }
