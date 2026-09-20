@@ -14,7 +14,7 @@ namespace
     // Functions and variables private to module.
     constexpr uint8_t kTargetWeightCount = 3; // Number of weights to collect before returning home
 
-    mission_state_t state = MISSION_IDLE;
+    mission_state_t state = MISSION_IDLE; //MISSION IDLE
     uint8_t collected_weight_count = 0;
     bool weight_detected_event = false;
     bool pickup_complete_event = false;

@@ -29,15 +29,15 @@
 #define PWM_MAX 255
 #define HOMING_SPEED 200
 #define LIMIT_SWITCH_BACK_OFF 2000
-#define PWM_SKIP 80
-#define ACCURACY 50
+#define PWM_SKIP 60 //was 80
+#define ACCURACY 1000
 
 // PID tuning values
-#define SERVO_KP 0.1
-#define SERVO_KI 0.1
-#define SERVO_KD 0.05
+#define SERVO_KP 0.07 //was 0.1
+#define SERVO_KI 0.01 //was 0.1
+#define SERVO_KD 0.005 //was 0.05
 
-#define LIFTER_UP_POS   5000
+#define LIFTER_UP_POS   -26000
 #define LIFTER_DOWN_POS 0
 
 namespace
@@ -123,7 +123,7 @@ namespace
 
         if (servo->isHomed())
         {
-            servo->setTravelLimits(0, MAX_TRAVEL_ENC_COUNT);
+            servo->setTravelLimits(-MAX_TRAVEL_ENC_COUNT, 0);
             return true;
         }
 
@@ -140,13 +140,13 @@ bool lifter_motor_init()
 
     // Setup servo config
     servo1.setPWMSkip(PWM_SKIP); // minimum PWM to overcome stiction
-    servo1.setAccuracy(10); // acceptable position error in counts
+    servo1.setAccuracy(ACCURACY); // acceptable position error in counts
     servo1.setMaxPWM(PWM_MAX);
     servo1.setPIDTunings(SERVO_KP, SERVO_KI, SERVO_KD);
     servo1.attachEndstops(nullptr, readEndstop<END_STOP_A_PIN>);
 
     servo2.setPWMSkip(PWM_SKIP); // minimum PWM to overcome stiction
-    servo2.setAccuracy(10); // acceptable position error in counts
+    servo2.setAccuracy(ACCURACY); // acceptable position error in counts
     servo2.setMaxPWM(PWM_MAX);
     servo2.setPIDTunings(SERVO_KP, SERVO_KI, SERVO_KD);
     servo2.attachEndstops(nullptr, readEndstop<END_STOP_B_PIN>);
@@ -154,6 +154,7 @@ bool lifter_motor_init()
 
     if (home_servo(&servo1) && home_servo(&servo2))
     {
+        lifter_move_middle();
         return true;
     }
 
@@ -189,13 +190,29 @@ void lifter_lower()
     servo2.moveTo(LIFTER_DOWN_POS);
 }
 
-bool is_lifter_reached_top() // +- 10%
+void lifter_move_middle()
+{
+    servo1.moveTo(LIFTER_UP_POS / 2);
+    servo2.moveTo(LIFTER_UP_POS / 2);
+}
+
+bool is_lifter_reached_target() // +- 10%
 {
     long pos1 = servo1.getActualPosition();
     long pos2 = servo2.getActualPosition();
 
-    bool servo1_near_top = abs(pos1 - LIFTER_UP_POS) < LIFTER_UP_POS / 10;
-    bool servo2_near_top = abs(pos2 - LIFTER_UP_POS) < LIFTER_UP_POS / 10;
+    bool servo1_near_top = abs(pos1 - servo1.getRequestedPosition()) < abs(LIFTER_UP_POS) / 10;
+    bool servo2_near_top = abs(pos2 - servo2.getRequestedPosition()) < abs(LIFTER_UP_POS) / 10;
 
     return servo1_near_top && servo2_near_top;
+}
+
+long lifter_get_position1()
+{
+    return servo1.getActualPosition();
+}
+
+long lifter_get_position2()
+{
+    return servo2.getActualPosition();
 }

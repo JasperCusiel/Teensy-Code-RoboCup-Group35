@@ -15,6 +15,8 @@
 #include "mapping.h"
 #include "vfh.h"
 #include "weight-pickup.h"
+#include "ir-reflective.h"
+#include "lift-motor.h"
 
 #include <Arduino.h>
 #include <Encoder.h>
@@ -516,6 +518,10 @@ void draw_weight_pickup()
         break;
     case PICKUP_STATUS_ALIGNING:
         display.drawStr(50, 10, "ALIGNING");
+        char buf[20];
+        snprintf(buf, sizeof(buf), "A13:%d", analogRead(A13));
+        display.drawStr(2, 24, buf);
+        display.drawStr(2, 36, is_weight_detected_ir_reflective() ? "IR: DETECTED" : "IR: ---");
         break;
     case PICKUP_STATUS_WEIGHT_LOST:
         display.drawStr(50, 10, "FINDING");

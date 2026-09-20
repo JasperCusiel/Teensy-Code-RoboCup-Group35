@@ -16,8 +16,8 @@
 
 #define WEIGHT_TYPE_CHECK_CYCLES 10
 #define ALIGNING_TIMEOUT_MS 10000
-#define FAKE_WEIGHT_CLEAR_DELAY_MS 500
-#define LOADING_WEIGHT_DELAY_MS 500
+#define FAKE_WEIGHT_CLEAR_DELAY_MS 2000
+#define LOADING_WEIGHT_DELAY_MS 1000
 #define END_STOP_A_PIN 0
 #define END_STOP_B_PIN 1
 #define WEIGHT_UNDETECTED_TIMEOUT_MS 5000
@@ -42,6 +42,17 @@ void weight_pickup_state_update()
     switch (current_state)
     {
     case PICKUP_STATUS_IDLE:
+        if (mission_get_state() == MISSION_WEIGHT_DETECTED) {
+            aligning_start_time = millis();
+            current_state = PICKUP_STATUS_ALIGNING;
+            break;
+        }
+        if (is_weight_detected_ir_reflective()) {
+            if (is_lifter_reached_target() && (mission_get_state() == MISSION_EXPLORE)) {
+                mission_report_weight_detected();
+                //slow down drive straight
+                current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
+            }
         if (mission_get_state() == MISSION_WEIGHT_DETECTED)
         {
             aligning_start_time = millis();
@@ -65,6 +76,9 @@ void weight_pickup_state_update()
             break;
         }
 
+        weight_pos = 2;//get_weight_position();       //to do --------------------------------------------------------------------
+
+        if (weight_pos == LEFT) {
         //weight_pos = get_weight_position(); //to do --------------------------------------------------------------------
         weight_pos = CENTRE;
         if (weight_pos == LEFT)
@@ -103,6 +117,8 @@ void weight_pickup_state_update()
         break;
 
     case PICKUP_STATUS_WEIGHT_LOST:
+        weight_pos = 0;//get_weight_position(); 
+        if  (millis() - searching_start_time > SEARCHING_TIMEOUT_MS) {
         weight_pos = CENTRE;
         // weight_pos = get_weight_position();
         if (millis() - searching_start_time > SEARCHING_TIMEOUT_MS)
@@ -117,6 +133,8 @@ void weight_pickup_state_update()
             searching_start_time = 0;
             current_state = PICKUP_STATUS_ALIGNING;
             break;
+        } else {
+            //look for weight eg turn on spot
         }
         else
         {
@@ -144,6 +162,7 @@ void weight_pickup_state_update()
 
     case PICKUP_STATUS_FAKE_WEIGHT_DETECTED:
         set_front_servo_up();
+        lifter_raise();
         current_state = PICKUP_STATUS_FAKE_WEIGHT_LIFTING;
         break;
 
@@ -154,6 +173,7 @@ void weight_pickup_state_update()
             current_state = PICKUP_STATUS_FAKE_WEIGHT_MOVING;
         }
         break;
+
 
     case PICKUP_STATUS_FAKE_WEIGHT_MOVING:
         if (!is_weight_detected_ir_reflective())
@@ -176,11 +196,17 @@ void weight_pickup_state_update()
         if (read_limit_switch(END_STOP_A_PIN) && read_limit_switch(END_STOP_B_PIN))
         {
             lifter_stop();
+            set_front_servo_up();
             current_state = PICKUP_STATUS_LOADING_WEIGHT;
             break;
         }
         lifter_lower();
-        set_front_servo_up();
+        if (is_lifter_reached_target) {
+            lifter_stop();
+            set_front_servo_up();
+            current_state = PICKUP_STATUS_LOADING_WEIGHT;
+            break;
+        }
         break;
 
 
@@ -204,12 +230,13 @@ void weight_pickup_state_update()
 
 
     case PICKUP_STATUS_LIFTING_WEIGHT:
+        if (is_lifter_reached_target()) {
         if (is_lifter_reached_top())
         {
             mission_report_pickup_complete(true);
             current_state = PICKUP_STATUS_IDLE;
         }
-        lifter_raise();
+        lifter_move_middle();
         break;
     }
 }
