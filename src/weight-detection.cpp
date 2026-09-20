@@ -11,6 +11,8 @@
 DFRobot_MatrixLidar_I2C tof(TOF_ARRAY_ADDRESS, &Wire1);
 uint16_t buf[64];
 uint32_t calibration[64];
+bool active[64];
+bool weight_detected = false;
 
 
 bool weight_detection_init() {
@@ -40,10 +42,23 @@ void drawToF_dithered_fast(U8G2 &u8g2,
 
   uint16_t max_value = 0;
 
-  for (int cy = 0; cy < 8; cy++) {
-    for (int cx = 0; cx < 8; cx++) {
+  for (int i = 0; i <64; i ++){
 
-      int index = cy * 8 + cx;
+  int16_t d = (int16_t)calibration[i] - (int16_t)buf[i];
+
+    active[i] = (d >0 && d < d_max);
+  }
+  filter();
+  weight_detected = detect_weight();
+
+  if (weight_detected){
+    u8g2.drawStr(70,10, "WEIGHT!");
+  }
+
+  for (int cy = 0; cy < 8; cy++) {
+        for (int cx = 0; cx < 8; cx++) {
+
+            int index = cy * 8 + cx;
 
       // Remove calibrated floor
       int16_t d = (int16_t)calibration[index] -
@@ -54,7 +69,7 @@ void drawToF_dithered_fast(U8G2 &u8g2,
         d = 0;
 
       if (d > d_max)
-        d = d_max;
+        d = 0;
 
       if (d > max_value)
         max_value = d;
@@ -80,29 +95,98 @@ void drawToF_dithered_fast(U8G2 &u8g2,
           if (level > row[px & 3]) {
             u8g2.drawPixel(base_x + px, sy);
           }
+
+          }
         }
       }
     }
   }
 
 
-  char buffer[20];
-  snprintf(buffer, sizeof(buffer), "Max:%hu", max_value);
-  u8g2.drawStr(70, 20, buffer);
 
+void filter() //filter out random pixels
+{
+    bool filtered[64] = {false};
 
-  // Calibration button
-  if (read_button(A9) == LOW) {
-    u8g2.drawStr(70, 10, "Calibrating...");
-    fill_calibration_matrix();
+    for (int cy = 0; cy < 8; cy++) {
+        for (int cx = 0; cx < 8; cx++) {
+
+            int index = cy * 8 + cx;
+
+            if (!active[index]){
+              continue;
+            }
+          
+            int neighbours = 0;
+            if (cx > 0 && active[index - 1]){
+                neighbours++;
+            }
+            if (cx < 7 && active[index + 1]){
+                neighbours++;
+            }
+            if (cy > 0 && active[index - 8]){
+                neighbours++;
+            }
+
+            if (cy < 7 && active[index + 8]){
+                neighbours++;
+            }
+
+            if (neighbours >= 2){
+                filtered[index] = true;
+            }
+        }
+    }
+
+    // Copy filtered result back
+    for (int i = 0; i < 64; i++) {
+        active[i] = filtered[i];
+    }
+}
+
+bool detect_weight(){ //by finding a stack of 3 pixels in a coloumn (unsure)
+  for (int y = 0; y < 6; y++ ){
+    for(int x = 0; x < 8; x++){
+
+      int i = y * 8 + x;
+      if(active[i] && active[i + 8] && active[i+16]){
+        return true;
+      }
+    }
   }
+
+  return false;
 }
 
 
 void draw_depth_data(U8G2 &u8g2) {
-  tof.getAllData(buf);
-  drawToF_dithered_fast(u8g2, 350, 0, 0);
+  // tof.getAllData(buf);
+
+  uint32_t sum[64] = {0};
+  uint16_t temp[64];
+
+for(int n = 0; n < 8; n++) {
+    tof.getAllData(temp);
+
+    for(int i = 0; i < 64; i++) {
+        sum[i] += temp[i];
+    }
+
+    delay(20);
 }
+
+for(int i = 0; i < 64; i++) {
+    buf[i] = sum[i] / 8;
+}
+
+  drawToF_dithered_fast(u8g2,150,0, 0);
+  if (read_button(A9) == LOW) {
+    u8g2.drawStr(70, 10, "calibrating...");
+    fill_calibration_matrix();
+
+}
+}
+  
 
 void fill_calibration_matrix() {
   // Reset calibration data
@@ -125,3 +209,6 @@ void fill_calibration_matrix() {
     calibration[j] = calibration[j] / 10;
   }
 }
+
+
+
