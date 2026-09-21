@@ -30,20 +30,22 @@
 #define HOMING_SPEED 200
 #define LIMIT_SWITCH_BACK_OFF 2000
 #define PWM_SKIP 60 //was 80
-#define ACCURACY 100
+#define ACCURACY 1500
+#define REACHED_TOLERANCE 2500   // encoder counts
 
 // PID tuning values
-#define SERVO_KP 0.1 //was 0.1
-#define SERVO_KI 0.1 //was 0.1
-#define SERVO_KD 0.05 //was 0.05
+#define SERVO_KP 0.04 //was 0.1
+#define SERVO_KI 0.01 //was 0.1
+#define SERVO_KD 0 //was 0.05
 
 #define LIFTER_UP_POS   (-26000)
-#define LIFTER_DOWN_POS 0
+#define LIFTER_DOWN_POS -200
 
 namespace
 {
     // DCMotorServo takes plain function pointers, which cannot carry a Servo or
     // Encoder reference. Template generates the callbacks for each pair.
+
     template <Servo& Motor, Encoder& EncoderInput>
     struct MotorCallbacks
     {
@@ -60,6 +62,7 @@ namespace
 
     template <uint8_t Pin>
     bool readEndstop()
+    
     {
         return read_limit_switch(Pin);
     }
@@ -84,6 +87,17 @@ namespace
         Motor2Callbacks::brake,
         Motor2Callbacks::readEncoder,
         Motor2Callbacks::writeEncoder);
+
+    long target1 = LIFTER_DOWN_POS;
+    long target2 = LIFTER_DOWN_POS;
+
+    void set_targets(long t1, long t2)
+    {
+        target1 = t1;
+        target2 = t2;
+        servo1.moveTo(t1);
+        servo2.moveTo(t2);
+    }
 
     bool home_servo(DCMotorServo* servo)
     {
@@ -154,7 +168,7 @@ bool lifter_motor_init()
 
     if (home_servo(&servo1) && home_servo(&servo2))
     {
-        lifter_move_middle();
+        lifter_lower();
         return true;
     }
 
@@ -166,8 +180,7 @@ void lifter_stop()
     // Command a hold at the current position rather than cutting the PID loop
     // entirely - this keeps the motor actively holding against gravity/load
     // rather than free-wheeling.
-    servo1.moveTo(servo1.getActualPosition());
-    servo2.moveTo(servo2.getActualPosition());
+    set_targets(servo1.getActualPosition(), servo2.getActualPosition());
 }
 
 void lifter_motor_update()
@@ -178,29 +191,15 @@ void lifter_motor_update()
 }
 
 
-void lifter_raise()
-{
-    servo1.moveTo(LIFTER_UP_POS);
-    servo2.moveTo(LIFTER_UP_POS);
-}
+void lifter_raise()       { set_targets(LIFTER_UP_POS, LIFTER_UP_POS); }
+void lifter_lower()       { set_targets(LIFTER_DOWN_POS, LIFTER_DOWN_POS); }
+void lifter_move_middle() { set_targets(LIFTER_UP_POS / 2, LIFTER_UP_POS / 2); }
 
-void lifter_lower()
+bool is_lifter_reached_target()
 {
-    servo1.moveTo(LIFTER_DOWN_POS);
-    servo2.moveTo(LIFTER_DOWN_POS);
+    return labs(servo1.getActualPosition() - target1) <= REACHED_TOLERANCE &&
+           labs(servo2.getActualPosition() - target2) <= REACHED_TOLERANCE;
 }
-
-void lifter_move_middle()
-{
-    servo1.moveTo(LIFTER_UP_POS / 2);
-    servo2.moveTo(LIFTER_UP_POS / 2);
-}
-
-bool is_lifter_reached_target() // +- 10%
-{
-    return servo1.finished() && servo2.finished();
-}
-
 long lifter_get_position1()
 {
     return servo1.getActualPosition();

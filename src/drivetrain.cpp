@@ -137,6 +137,12 @@ void drivetrain_update()
 
 void set_wheel_speed_targets(float left_mps, float right_mps)
 {
+    if (left_mps == 0.0f && right_mps == 0.0f)
+    {
+        left_tacho.stop();
+        right_tacho.stop();
+        return;
+    }
     left_tacho.setSpeedRPM(wheel_speed_to_rpm(left_mps));
     right_tacho.setSpeedRPM(wheel_speed_to_rpm(right_mps));
 }
@@ -268,4 +274,11 @@ void PID_tune()
             print_right_tuning_help();
         }
     }
+}
+
+void drivetrain_print_debug()
+{
+    Serial.printf("WANT L/R: %.1f %.1f rpm | ACTUAL L/R: %.1f %.1f rpm\n",
+        left_tacho.getDesiredSpeedRPM(), right_tacho.getDesiredSpeedRPM(),
+        left_tacho.getMeasuredSpeedRPM(), right_tacho.getMeasuredSpeedRPM());
 }

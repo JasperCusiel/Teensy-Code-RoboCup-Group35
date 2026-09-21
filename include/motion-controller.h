@@ -34,4 +34,7 @@ void motion_controller_apply_motor_output(
 
 void motion_controller_get_outputs(float* left_mps, float* right_mps);
 
+void motion_controller_set_override(bool active);
+void motion_controller_override_drive(float speed_mps, float turn_rate_rad_s);
+
 #endif // ROBOCUP_MOTION_CONTROLLER_H

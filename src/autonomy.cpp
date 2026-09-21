@@ -222,5 +222,8 @@ void autonomy_motion_task()
 {
     // Fast autonomy loop -> get latest pose and update motion controller with latest command.
     get_ekf_pose(&current_pose.x, &current_pose.y, &current_pose.theta);
-    motion_controller_update(&current_pose, &safe_command);
+    if (weight_pickup_get_state() == PICKUP_STATUS_IDLE)
+    {
+        motion_controller_update(&current_pose, &safe_command);
+    }
 }

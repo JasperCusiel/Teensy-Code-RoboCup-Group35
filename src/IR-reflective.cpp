@@ -6,7 +6,7 @@
 #include <core_pins.h>
 
 #define SENSE_PIN A13
-#define SENSE_THRESHOLD 20
+#define SENSE_THRESHOLD 10
 #define SAMPLE_COUNT 3
 
 static int16_t buffer[3] = {0, 0, 0};

@@ -51,6 +51,9 @@ void mission_report_weight_detected();
 // Transitions out of WEIGHT_DETECTED state.
 void mission_report_pickup_complete(bool success);
 
+//Transitions from COMPLETE to EXPLORE state.
+void mission_report_dropoff_complete(bool success);
+
 // Return number of successfully collected weights.
 uint8_t mission_get_weight_count();
 void mission_return_home();
