@@ -12,6 +12,8 @@
 
 namespace
 {
+    bool override_active = false;
+    float override_heading = 0.0f;
     // Robot and PID config
     constexpr float kTrackWidthM = 0.28f;
     constexpr float kMaxWheelSpeedMps = 0.50f;
@@ -32,7 +34,14 @@ namespace
 
     // Used to track dt for PI loops
     uint32_t previous_update_us = 0;
-
+    float take_dt()
+    {
+        const uint32_t now = micros();
+        float dt = static_cast<float>(now - previous_update_us) * 1.0e-6f;
+        previous_update_us = now;
+        if (dt <= 0.0f || dt > 0.25f) dt = 1.0f / 95.0f;
+        return dt;
+    }
     float clamp_value(float value, float minimum, float maximum)
     {
         return fminf(maximum, fmaxf(minimum, value));
@@ -66,11 +75,9 @@ void motion_controller_stop()
 void motion_controller_update(const pose_t* pose, const velocity_command_t* command)
 {
     // Updates the commanded wheel speeds based on the commanded linear velocity and heading.
-    // Calculate dt for PID loops
-    const uint32_t now = micros();
-    float dt = static_cast<float>(now - previous_update_us) * 1.0e-6f;
-    previous_update_us = now;
-    if (dt <= 0.0f || dt > 0.25f) dt = 1.0f / 95.0f;
+    if (override_active) return;   // pickup owns the wheels
+
+    const float dt = take_dt();
 
     if (!enabled || pose == nullptr || command == nullptr || command->stop)
     {
@@ -136,4 +143,64 @@ void motion_controller_get_outputs(float* left, float* right)
     // Returns the commanded wheel speed targets.
     if (left != nullptr) *left = left_target;
     if (right != nullptr) *right = right_target;
+}
+
+void motion_controller_set_override(bool active)
+{
+    if (active == override_active) return;
+    override_active = active;
+    reset_pid();
+    motion_controller_stop();          // always start and end from a clean stop
+
+    if (active)
+    {
+        float x, y, theta;
+        get_ekf_pose(&x, &y, &theta);
+        override_heading = theta;      // hold the heading we were facing
+    }
+}
+
+void motion_controller_override_drive(float speed_mps, float turn_rate_rad_s)
+{
+    if (!override_active || !enabled) return;
+
+    float x, y, theta;
+    get_ekf_pose(&x, &y, &theta);
+    const float dt = take_dt();
+
+    // Real stop: zero speed and zero turn means hold still
+    if (speed_mps == 0.0f && turn_rate_rad_s == 0.0f)
+    {
+        override_heading = theta;   // re-capture so the next drive holds this heading
+        reset_pid();
+        motion_controller_set_wheel_targets(0.0f, 0.0f);
+        motion_controller_apply_motor_output(0.0f, 0.0f);
+        return;
+    }
+
+    float turn;
+    if (turn_rate_rad_s == 0.0f)
+    {
+        // Driving straight: hold heading, but ignore tiny errors (~3 degrees)
+        const float error = wrap_angle_rad(override_heading - theta);
+        if (fabsf(error) < 0.05f)
+        {
+            turn = 0.0f;
+        }
+        else
+        {
+            turn = heading_pid_update(override_heading, theta, dt);
+        }
+    }
+    else
+    {
+        // Turning: command the rate directly and re-capture the heading
+        turn = turn_rate_rad_s;
+        override_heading = theta;
+        reset_pid();
+    }
+
+    motion_controller_set_wheel_targets(speed_mps - 0.5f * kTrackWidthM * turn,
+                                        speed_mps + 0.5f * kTrackWidthM * turn);
+    motion_controller_apply_motor_output(left_target, right_target);
 }

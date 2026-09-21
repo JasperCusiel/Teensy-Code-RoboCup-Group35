@@ -7,7 +7,6 @@
 #define EKF_M 3
 
 #include "odometry.h"
-#include "fl/math_macros.h"
 #include "imu.h"
 #include "optical-flow.h"
 #include "tinyekf.h"

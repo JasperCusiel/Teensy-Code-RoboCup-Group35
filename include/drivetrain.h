@@ -17,5 +17,6 @@ void set_wheel_speed_targets(float left_mps, float right_mps);
 // not normalized motor effort.
 void set_motor_speeds(float left_mps, float right_mps);
 void PID_tune();
+void drivetrain_print_debug();
 
 #endif // ROBOCUP_DRIVETRAIN_H

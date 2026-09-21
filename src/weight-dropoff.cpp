@@ -6,8 +6,11 @@
 #include "mission.h"
 #include "lift-motor.h"
 #include "smart-servo.h"
+#include "motion-controller.h"
+#include "odometry.h"
 
-#define UNLOAD_DELAY_MS 2000
+#define UNLOAD_DELAY_MS 5000
+#define DROPOFF_DRIVE_SPEED 0.06f
 
 static weight_dropoff_state_t current_state = DROPOFF_STATUS_IDLE;
 static unsigned long unload_start_time = 0;
@@ -25,7 +28,7 @@ void weight_dropoff_state_update() {
         case DROPOFF_STATUS_LOWER:
             if (is_lifter_reached_target()) {
                 set_back_servo_up();
-                //drive forwards
+                motion_controller_override_drive(DROPOFF_DRIVE_SPEED, 0.0f);
                 unload_start_time = millis();
                 current_state = DROPOFF_STATUS_UNLOAD;
             }
@@ -33,9 +36,9 @@ void weight_dropoff_state_update() {
 
         case DROPOFF_STATUS_UNLOAD:
                 if (millis() - unload_start_time > UNLOAD_DELAY_MS) {
-                // stop driving
+                motion_controller_override_drive(0.0f, 0.0f);
                 set_back_servo_down();
-                // mission_report_dropoff_complete(); 
+                mission_report_dropoff_complete(true); 
                 current_state = DROPOFF_STATUS_IDLE;
             }
             break;

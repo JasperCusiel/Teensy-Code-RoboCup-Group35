@@ -515,17 +515,18 @@ void draw_weight_pickup()
     {
     case PICKUP_STATUS_IDLE:
         display.drawStr(50, 10, "IDLE");
-        break;
-    case PICKUP_STATUS_ALIGNING:
-        display.drawStr(50, 10, "ALIGNING");
         char buf[20];
         snprintf(buf, sizeof(buf), "A13:%d", analogRead(A13));
         display.drawStr(2, 24, buf);
         display.drawStr(2, 36, is_weight_detected_ir_reflective() ? "IR: DETECTED" : "IR: ---");
+        display.drawStr(2, 48, is_lifter_reached_target() ? "Lifter in pos" : "Lifter not in pos");
         break;
-    case PICKUP_STATUS_WEIGHT_LOST:
-        display.drawStr(50, 10, "FINDING");
-        break;
+    case PICKUP_STATUS_ALIGNING:
+        display.drawStr(50, 10, "ALIGNING");
+        snprintf(buf, sizeof(buf), "A13:%d", analogRead(A13));
+        display.drawStr(2, 24, buf);
+        display.drawStr(2, 36, is_weight_detected_ir_reflective() ? "IR: DETECTED" : "IR: ---");
+        break;          
     case PICKUP_STATUS_CHECKING_WEIGHT_TYPE:
         display.drawStr(50, 10, "CHECK TYPE");
         break;

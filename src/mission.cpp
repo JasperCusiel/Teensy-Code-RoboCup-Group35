@@ -19,6 +19,8 @@ namespace
     bool weight_detected_event = false;
     bool pickup_complete_event = false;
     bool pickup_succeeded = false;
+    bool dropoff_succeeded = false;
+    bool dropoff_complete_event = false;
 
     void enter_state(mission_state_t new_state)
     {
@@ -50,6 +52,8 @@ void mission_init()
     weight_detected_event = false;
     pickup_complete_event = false;
     pickup_succeeded = false;
+    dropoff_complete_event = false;
+    dropoff_succeeded = false;
 }
 
 void mission_task()
@@ -112,6 +116,20 @@ void mission_task()
         break;
 
     case MISSION_COMPLETE:
+        if (dropoff_complete_event)
+        {
+            // Clear flag
+            dropoff_complete_event = false;
+            if (dropoff_succeeded)
+            {
+                collected_weight_count = 0;
+                enter_state(MISSION_EXPLORE);
+            } else {
+                enter_state(MISSION_RETURN_HOME);
+            }
+        }
+        break;
+
     case MISSION_STOPPED:
 
         break;
@@ -166,7 +184,14 @@ void mission_report_pickup_complete(bool success)
         pickup_complete_event = true;
     }
 }
-
+void mission_report_dropoff_complete(bool success)
+{
+    if (state == MISSION_COMPLETE)
+    {
+        dropoff_succeeded = success;
+        dropoff_complete_event = true;
+    }
+}
 uint8_t mission_get_weight_count() { return collected_weight_count; }
 
 void mission_return_home()
