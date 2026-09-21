@@ -7,7 +7,7 @@
 #include "lift-motor.h"
 #include "smart-servo.h"
 
-#define UNLOAD_DELAY_MS 2000
+#define UNLOAD_DELAY_MS 20000
 
 static weight_dropoff_state_t current_state = DROPOFF_STATUS_IDLE;
 static unsigned long unload_start_time = 0;
@@ -35,7 +35,7 @@ void weight_dropoff_state_update() {
                 if (millis() - unload_start_time > UNLOAD_DELAY_MS) {
                 // stop driving
                 set_back_servo_down();
-                // mission_report_dropoff_complete(); 
+                mission_report_dropoff_complete(true); 
                 current_state = DROPOFF_STATUS_IDLE;
             }
             break;
