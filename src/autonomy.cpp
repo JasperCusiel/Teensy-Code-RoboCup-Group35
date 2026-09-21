@@ -197,9 +197,9 @@ void autonomy_task()
 
     if (mission_get_state() == MISSION_WEIGHT_DETECTED)
     {
-        safe_command = should_drive_towards_weight()
-            ? weight_approach_command(current_pose)
-            : velocity_command_t{current_pose.theta, 0.0f, 0.0f, true};
+        //safe_command = should_drive_towards_weight()
+            //? weight_approach_command(current_pose)
+            //: velocity_command_t{current_pose.theta, 0.0f, 0.0f, true};
         return;
     }
 
