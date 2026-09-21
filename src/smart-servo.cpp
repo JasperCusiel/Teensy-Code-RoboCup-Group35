@@ -20,6 +20,7 @@
 #define BACK_SERVO_UP_POS    700
 #define BACK_SERVO_DOWN_POS  600
 #define SERVO_MOVE_PLAYTIME  50
+#define SERVO_REBOOT_RECOVERY_DELAY_MS 500UL
 
 HerkulexServoBus herkulex_bus(SERIAL_BUS);
 HerkulexServo servo_a(herkulex_bus, SERVO_ID_A);
@@ -34,6 +35,35 @@ HerkulexStatusDetail detail;
 
 // Up/down tracking
 bool servo_down[] = {false, false}; // back, front
+bool servo_recovering[] = {false, false};
+uint32_t servo_reboot_time_ms[] = {0, 0};
+
+static bool read_servo_status(size_t servo_index, HerkulexStatusError &status_error, HerkulexStatusDetail &status_detail)
+{
+    HerkulexPacket resp;
+    if (!herkulex_bus.sendPacketAndReadResponse(resp, servo_id[servo_index], HerkulexCommand::Stat))
+    {
+        return false;
+    }
+
+    status_error = static_cast<HerkulexStatusError>(resp.data[0]);
+    status_detail = static_cast<HerkulexStatusDetail>(resp.data[1]);
+    return true;
+}
+
+static void restore_servo_target(size_t servo_index)
+{
+    if (servo_index == 0)
+    {
+        servos[servo_index]->setPosition(servo_down[servo_index] ? BACK_SERVO_DOWN_POS : BACK_SERVO_UP_POS,
+                                         SERVO_MOVE_PLAYTIME);
+    }
+    else
+    {
+        servos[servo_index]->setPosition(servo_down[servo_index] ? FRONT_SERVO_DOWN_POS : FRONT_SERVO_UP_POS,
+                                         SERVO_MOVE_PLAYTIME);
+    }
+}
 
 bool smart_servo_init()
 {
@@ -42,10 +72,7 @@ bool smart_servo_init()
 
     for (size_t i = 0; i < 2; i++)
     {
-        HerkulexPacket resp;
-        if (bool success = herkulex_bus.sendPacketAndReadResponse(
-                resp, servo_id[i], HerkulexCommand::Stat);
-            !success)
+        if (!read_servo_status(i, servo_error, detail))
         {
             char buf[17];
             snprintf(buf, sizeof(buf), "SV%d NO RESP", i);
@@ -53,7 +80,6 @@ bool smart_servo_init()
             num_errors++;
             continue;
         }
-        servos[i]->getStatus(servo_error, detail);
 
         char buf[17];
         snprintf(buf, sizeof(buf), "SV%d E:%02X D:%02X", i,
@@ -122,20 +148,43 @@ void smart_servo_monitor_task()
 
     for (size_t i = 0; i < 2; i++)
     {
-        servos[i]->getStatus(status_error, status_detail);
+        if (servo_recovering[i])
+        {
+            if (millis() - servo_reboot_time_ms[i] < SERVO_REBOOT_RECOVERY_DELAY_MS)
+            {
+                continue;
+            }
+
+            if (!read_servo_status(i, status_error, status_detail))
+            {
+                continue;
+            }
+
+            if (status_error != HerkulexStatusError::None)
+            {
+                servos[i]->reboot();
+                servo_reboot_time_ms[i] = millis();
+                continue;
+            }
+
+            servos[i]->setLedColor(HerkulexLed::Green);
+            servos[i]->setTorqueOn();
+            servos[i]->enablePositionControlMode();
+            restore_servo_target(i);
+            servo_recovering[i] = false;
+            continue;
+        }
+
+        if (!read_servo_status(i, status_error, status_detail))
+        {
+            continue;
+        }
+
         if (status_error != HerkulexStatusError::None)
         {
             servos[i]->reboot();
-            servos[i]->setTorqueOn();
-            servos[i]->enablePositionControlMode();
-            if (i == 0)
-            {
-                servos[i]->setPosition(servo_down[i] ? BACK_SERVO_DOWN_POS : BACK_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
-            }
-            else
-            {
-                servos[i]->setPosition(servo_down[i] ? FRONT_SERVO_DOWN_POS : FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
-            }
+            servo_recovering[i] = true;
+            servo_reboot_time_ms[i] = millis();
         }
     }
 }
