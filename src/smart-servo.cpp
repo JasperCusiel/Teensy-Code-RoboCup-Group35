@@ -32,6 +32,9 @@ uint8_t servo_id[] = {SERVO_ID_A, SERVO_ID_B};
 HerkulexStatusError servo_error;
 HerkulexStatusDetail detail;
 
+// Up/down tracking
+bool servo_down[] = {false, false}; // back, front
+
 bool smart_servo_init()
 {
     SERIAL_BUS.begin(SERIAL_BAUD);
@@ -75,21 +78,25 @@ bool smart_servo_init()
 void set_front_servo_up()
 {
     servo_b.setPosition(FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+    servo_down[1] = false;
 }
 
 void set_front_servo_down()
 {
     servo_b.setPosition(FRONT_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
+    servo_down[1] = true;
 }
 
 void set_back_servo_up()
 {
     servo_a.setPosition(BACK_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+    servo_down[0] = false;
 }
 
 void set_back_servo_down()
 {
     servo_a.setPosition(BACK_SERVO_DOWN_POS, SERVO_MOVE_PLAYTIME);
+    servo_down[0] = true;
 }
 
 bool is_front_servo_in_position()
@@ -113,12 +120,22 @@ void smart_servo_monitor_task()
     HerkulexStatusError status_error;
     HerkulexStatusDetail status_detail;
 
-    for (auto& servo : servos)
+    for (size_t i = 0; i < 2; i++)
     {
-        servo->getStatus(status_error, status_detail);
+        servos[i]->getStatus(status_error, status_detail);
         if (status_error != HerkulexStatusError::None)
         {
-            servo->reboot();
+            servos[i]->reboot();
+            servos[i]->setTorqueOn();
+            servos[i]->enablePositionControlMode();
+            if (i == 0)
+            {
+                servos[i]->setPosition(servo_down[i] ? BACK_SERVO_DOWN_POS : BACK_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+            }
+            else
+            {
+                servos[i]->setPosition(servo_down[i] ? FRONT_SERVO_DOWN_POS : FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
+            }
         }
     }
 }
