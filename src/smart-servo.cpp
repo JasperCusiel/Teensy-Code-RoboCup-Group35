@@ -107,3 +107,18 @@ bool is_back_servo_in_position()
     servo_a.getStatus(status_error, status_detail);
     return (status_detail & HerkulexStatusDetail::InPosition) != HerkulexStatusDetail::None;
 }
+
+void smart_servo_monitor_task()
+{
+    HerkulexStatusError status_error;
+    HerkulexStatusDetail status_detail;
+
+    for (auto& servo : servos)
+    {
+        servo->getStatus(status_error, status_detail);
+        if (status_error != HerkulexStatusError::None)
+        {
+            servo->reboot();
+        }
+    }
+}

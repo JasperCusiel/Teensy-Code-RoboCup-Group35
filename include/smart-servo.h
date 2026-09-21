@@ -13,6 +13,7 @@ void set_back_servo_up();
 void set_back_servo_down();
 bool is_front_servo_in_position();
 bool is_back_servo_in_position();
+void smart_servo_monitor_task();
 
 
 #endif // ROBOCUP_SMART_SERVO_H
