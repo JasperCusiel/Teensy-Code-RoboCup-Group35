@@ -28,7 +28,7 @@
 #define LEFT 1
 #define CENTRE 2
 #define RIGHT 3
-#define PICKUP_DRIVE_SPEED 0.03f
+#define PICKUP_DRIVE_SPEED 0.07f
 
 static weight_pickup_state_t current_state = PICKUP_STATUS_IDLE;
 static short weight_type_check_cycle = 0;
@@ -36,7 +36,6 @@ static unsigned long aligning_start_time = 0;
 static unsigned long fake_weight_clear_start = 0;
 static unsigned long loading_confirm_start = 0;
 static unsigned long last_weight_seen_time = 0;
-
 
 
 void weight_pickup_state_update()
@@ -149,7 +148,7 @@ void weight_pickup_state_update()
         if (is_lifter_reached_target())
         {
             set_front_servo_up();
-    
+
             current_state = PICKUP_STATUS_LOADING_WEIGHT;
             break;
         }
