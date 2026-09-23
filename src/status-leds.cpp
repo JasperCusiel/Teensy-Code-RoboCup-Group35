@@ -5,6 +5,8 @@
 #include <Arduino.h>
 #include <FastLED.h>
 
+#include "navigation.h"
+
 #define STATUS_LED_DATA_PIN A12
 
 namespace
@@ -25,13 +27,23 @@ namespace
         case MISSION_IDLE:
             return CRGB::White;
         case MISSION_EXPLORE:
-            return CRGB::Green;
+            if (navigation_get_goal().type == NAV_GOAL_COVERAGE)
+            {
+                return CRGB::Purple;
+            }
+            else
+            {
+                return CRGB::Green;
+            }
+
         case MISSION_WEIGHT_DETECTED:
             return CRGB::Orange;
+        case MISSION_RECOVERING:
+            return CRGB::Yellow;
         case MISSION_RETURN_HOME:
             return CRGB::Blue;
         case MISSION_COMPLETE:
-            return CRGB::Purple;
+            return CRGB::DarkBlue;
         case MISSION_STOPPED:
             return CRGB::Red;
         }
