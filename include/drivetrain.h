@@ -7,16 +7,8 @@
 
 void drivetrain_init();
 
-// Run the drivetrain speed controllers. Call frequently from the scheduler.
-void drivetrain_update();
-
 // Set wheel speed targets in metres per second.
-void set_wheel_speed_targets(float left_mps, float right_mps);
+void set_open_loop_wheel_speed_targets(float left_mps, float right_mps);
 
-// Backwards-compatible wrapper. These values are wheel speed targets in m/s,
-// not normalized motor effort.
-void set_motor_speeds(float left_mps, float right_mps);
-void PID_tune();
-void drivetrain_print_debug();
 
 #endif // ROBOCUP_DRIVETRAIN_H
