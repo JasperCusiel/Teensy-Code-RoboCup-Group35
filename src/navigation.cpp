@@ -8,10 +8,10 @@
 #include "frontier-detection.h"
 #include "mission.h"
 #include "odometry.h"
+#include "occupancy-grid.h"
 #include "mapping.h"
 #include <limits.h>
 #include <math.h>
-#include "math_utils.h"
 
 // Navigation module own the high-level target and planned path, other modules query this state.
 
@@ -25,6 +25,9 @@ namespace
     constexpr uint8_t kNoFrontierScanCyclesBeforeComplete = 40;
     constexpr uint8_t kRejectedFrontierCount = 8;
     constexpr uint8_t kRejectedFrontierRadiusCells = 3;
+    constexpr uint8_t kPathValidationSkipCells = 2;
+    constexpr uint8_t kPathValidationAheadCells = 14;
+    constexpr uint8_t kReplansBeforeGoalReject = 5;
 
     navigation_goal_t active_goal = {NAV_GOAL_NONE, {0, 0}};
     // Current navigation target, either none, frontier or base.
@@ -33,6 +36,7 @@ namespace
     grid_point_t base_cell = {0, 0}; // Cell where the base is (for return to home)
     bool base_is_set = false; // Whether base cell is valid
     bool replan_requested = false; // Event flag to request path regeneration
+    uint8_t replans_for_active_goal = 0;
     float no_frontier_scan_angle_rad = 0.0f;
     float last_no_frontier_heading_rad = 0.0f;
     bool no_frontier_scan_started = false;
@@ -53,6 +57,12 @@ namespace
                    : kDefaultGoalToleranceM;
     }
 
+    float wrap_angle(float angle)
+    {
+        while (angle > kPi) angle -= 2.0f * kPi;
+        while (angle < -kPi) angle += 2.0f * kPi;
+        return angle;
+    }
 
     void reset_no_frontier_scan()
     {
@@ -60,6 +70,17 @@ namespace
         last_no_frontier_heading_rad = 0.0f;
         no_frontier_scan_started = false;
         no_frontier_scan_cycles = 0;
+    }
+
+    void reset_replan_budget()
+    {
+        replans_for_active_goal = 0;
+    }
+
+    bool active_goal_can_be_rejected()
+    {
+        return active_goal.type == NAV_GOAL_FRONTIER ||
+            active_goal.type == NAV_GOAL_COVERAGE;
     }
 
     bool no_frontier_scan_complete(float heading)
@@ -76,7 +97,7 @@ namespace
             return false;
         }
 
-        no_frontier_scan_angle_rad += fabsf(wrap_angle_rad(heading - last_no_frontier_heading_rad));
+        no_frontier_scan_angle_rad += fabsf(wrap_angle(heading - last_no_frontier_heading_rad));
         last_no_frontier_heading_rad = heading;
 
         return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad ||
@@ -121,6 +142,7 @@ namespace
         {
             active_goal = {NAV_GOAL_NONE, {0, 0}};
             active_path.length = 0;
+            reset_replan_budget();
             status = no_frontier_scan_complete(robot_heading)
                          ? NAV_STATUS_EXPLORATION_COMPLETE
                          : NAV_STATUS_IDLE;
@@ -140,6 +162,7 @@ namespace
         {
             active_goal = {NAV_GOAL_NONE, {0, 0}};
             active_path.length = 0;
+            reset_replan_budget();
             status = NAV_STATUS_EXPLORATION_COMPLETE;
             return false;
         }
@@ -164,12 +187,11 @@ namespace
         return true;
     }
 
-    bool path_half_complete(const grid_point_t& robot_cell)
+    uint16_t closest_path_index(const grid_point_t& robot_cell)
     {
-        // Checks if we are half way through the path or not.
-        if (active_path.length < 2)
+        if (active_path.length == 0)
         {
-            return false;
+            return 0;
         }
 
         uint16_t closest_index = 0;
@@ -188,7 +210,61 @@ namespace
             }
         }
 
+        return closest_index;
+    }
+
+    bool path_half_complete(const grid_point_t& robot_cell)
+    {
+        // Checks if we are half way through the path or not.
+        if (active_path.length < 2)
+        {
+            return false;
+        }
+
+        const uint16_t closest_index = closest_path_index(robot_cell);
         return closest_index >= active_path.length / 2;
+    }
+
+    bool path_blocked_ahead(const grid_point_t& robot_cell)
+    {
+        if (active_path.length == 0)
+        {
+            return false;
+        }
+
+        const uint16_t closest_index = closest_path_index(robot_cell);
+        const uint16_t first_index = closest_index + kPathValidationSkipCells;
+        if (first_index >= active_path.length)
+        {
+            return false;
+        }
+
+        uint16_t end_index = closest_index + kPathValidationAheadCells + 1;
+        if (end_index > active_path.length)
+        {
+            end_index = active_path.length;
+        }
+
+        for (uint16_t i = first_index; i < end_index; ++i)
+        {
+            const grid_point_t& point = active_path.points[i];
+            if (cells_equal(point, active_goal.cell))
+            {
+                if (map_get_state(point.x, point.y) == OCCUPIED)
+                {
+                    return true;
+                }
+                continue;
+            }
+
+            if (map_get_state(point.x, point.y) != FREE ||
+                !astar_has_obstacle_clearance(point.x, point.y))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 } // namespace
 
@@ -199,6 +275,7 @@ void navigation_init()
     active_path.length = 0;
     status = NAV_STATUS_IDLE;
     replan_requested = false;
+    reset_replan_budget();
     coverage_planner_init();
     reset_no_frontier_scan();
     rejected_frontier_count = 0;
@@ -230,6 +307,7 @@ void navigation_task()
     if (!world_to_map(pose.x, pose.y, &robot_cell.x, &robot_cell.y))
     {
         active_path.length = 0;
+        reset_replan_budget();
         status = NAV_STATUS_PATH_FAILED;
         return;
     }
@@ -237,6 +315,7 @@ void navigation_task()
     if (pose_at_goal(pose))
     {
         active_path.length = 0;
+        reset_replan_budget();
         status = NAV_STATUS_GOAL_REACHED;
         if (mission_should_explore())
         {
@@ -245,6 +324,7 @@ void navigation_task()
                 coverage_planner_advance_goal();
             }
             active_goal = {NAV_GOAL_NONE, {0, 0}};
+            reset_replan_budget();
         }
         else
         {
@@ -262,6 +342,7 @@ void navigation_task()
     {
         active_goal = {NAV_GOAL_NONE, {0, 0}};
         active_path.length = 0;
+        reset_replan_budget();
     }
 
     // Exploration advances by repeatedly selecting the best frontier once the previous frontier goal has been reached.
@@ -305,8 +386,31 @@ void navigation_task()
     }
 
     if (active_goal.type != NAV_GOAL_NONE &&
+        active_path.length > 0 &&
+        path_blocked_ahead(robot_cell))
+    {
+        replan_requested = true;
+    }
+
+    if (active_goal.type != NAV_GOAL_NONE &&
         (active_path.length == 0 || replan_requested))
     {
+        const bool replan_from_existing_path =
+            replan_requested && active_path.length > 0;
+        if (replan_from_existing_path && active_goal_can_be_rejected())
+        {
+            if (replans_for_active_goal < kReplansBeforeGoalReject)
+            {
+                ++replans_for_active_goal;
+            }
+
+            if (replans_for_active_goal >= kReplansBeforeGoalReject)
+            {
+                navigation_reject_current_goal();
+                return;
+            }
+        }
+
         if (!plan_from(robot_cell) && mission_should_explore())
         {
             navigation_reject_current_goal();
@@ -328,6 +432,7 @@ void navigation_set_goal(navigation_goal_t goal)
         active_goal = goal;
         active_path.length = 0;
         replan_requested = true;
+        reset_replan_budget();
     }
 }
 
@@ -337,6 +442,7 @@ void navigation_clear_goal()
     active_goal = {NAV_GOAL_NONE, {0, 0}};
     active_path.length = 0;
     replan_requested = false;
+    reset_replan_budget();
     reset_no_frontier_scan();
     status = NAV_STATUS_IDLE;
 }
@@ -394,6 +500,7 @@ void navigation_reject_current_frontier()
     active_goal = {NAV_GOAL_NONE, {0, 0}};
     active_path.length = 0;
     replan_requested = false;
+    reset_replan_budget();
     status = NAV_STATUS_IDLE;
 }
 
@@ -411,6 +518,7 @@ void navigation_reject_current_goal()
         active_goal = {NAV_GOAL_NONE, {0, 0}};
         active_path.length = 0;
         replan_requested = false;
+        reset_replan_budget();
         status = NAV_STATUS_IDLE;
     }
 }
