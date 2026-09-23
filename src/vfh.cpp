@@ -2,17 +2,26 @@
 // Created by Jasper Cusiel on 25/07/2026.
 //
 
-#include "ToF-Sensors.h"
+#include <ToF-Sensors.h>
 #include <math.h>
 #include <stdint.h>
-#include "vfh.h"
-#include "math_utils.h"
+#include <vfh.h>
 
 
 VFH vfh;
 
 namespace
 {
+    constexpr float kHistogramCostWeight = 0.5f;
+    constexpr float kSteeringChangeCostWeight = 0.75f;
+
+    float wrap_angle(float angle)
+    {
+        while (angle > PI) angle -= 2.0f * PI;
+        while (angle < -PI) angle += 2.0f * PI;
+        return angle;
+    }
+
     float clamp_angle_to_fov(float angle)
     {
         if (angle < FOV_MIN) return FOV_MIN;
@@ -22,7 +31,7 @@ namespace
 
     float angular_distance(float a, float b)
     {
-        return fabsf(wrap_angle_rad(a - b));
+        return fabsf(wrap_angle(a - b));
     }
 }
 
@@ -35,7 +44,7 @@ void vfh_init()
         vfh.sector_angles[i] = FOV_MIN + (i + 0.5f) * SECTOR_WIDTH;
     }
     vfh.target_angle = 0.0f;
-    vfh.steering_angle = 0.0f;
+    vfh.steering_angle = NAN;
     vfh.forward_clearance = MAX_RANGE;
 }
 
@@ -72,7 +81,8 @@ void build_histogram()
         {
             continue;
         }
-        if (fabsf(new_lidar_scan->angles[i]) <= FRONT_CLEARANCE_CONE && r < vfh.forward_clearance)
+        if (fabsf(new_lidar_scan->angles[i]) <= FRONT_CLEARANCE_CONE &&
+            r < vfh.forward_clearance)
         {
             vfh.forward_clearance = r;
         }
@@ -123,7 +133,9 @@ float vfh_get_best_direction(float target_angle)
         float diff = angular_distance(angle, target);
         float steering_change =
             have_previous ? angular_distance(angle, vfh.steering_angle) : 0.0f;
-        float cost = diff + vfh.histogram[i] * 0.5f + steering_change * 0.25f;
+        float cost = diff +
+            vfh.histogram[i] * kHistogramCostWeight +
+            steering_change * kSteeringChangeCostWeight;
 
         if (cost < best_cost)
         {

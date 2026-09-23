@@ -8,8 +8,8 @@
 #include <lidar-config.h>
 
 #define MAX_RANGE 1.3f
-#define VFH_BLOCKED_THRESHOLD 0.45f
-#define VFH_FREE_THRESHOLD 0.30f
+#define VFH_BLOCKED_THRESHOLD 0.95f
+#define VFH_FREE_THRESHOLD 0.70f
 #define THRESHOLD VFH_BLOCKED_THRESHOLD
 #define ROBOT_RADIUS 0.24f
 #define SAFETY_DIST 0.02f
