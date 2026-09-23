@@ -26,6 +26,8 @@ uint32_t calibration[64];
 bool active[64];
 bool weight_detected = false;
 bool wall_detected = false;
+bool two_by_two = false;
+bool two_by_three = false;
 
 static bool tof_array_sees_wall();
 
@@ -101,7 +103,15 @@ void drawToF_dithered_fast(U8G2& u8g2,
 
     if (weight_detected)
     {
-        u8g2.drawStr(70, 10, "WEIGHT!");
+        if (two_by_two){
+            u8g2.drawStr(70, 10, "2x2");
+        }
+        else if (two_by_three){
+            u8g2.drawStr(70, 10, "2x3");
+        }
+        else{
+            u8g2.drawStr(70, 10, "WEIGHT!");
+        }
     }
     else if (wall_detected)
     {
@@ -174,30 +184,30 @@ void filter() //filter out random pixels
     }
 }
 
-static bool is_cell_in_weight_square(int cx, int cy, int square_x, int square_y)
-{
-    return cx >= square_x && cx < square_x + WEIGHT_SQUARE_SIZE &&
-        cy >= square_y && cy < square_y + WEIGHT_SQUARE_SIZE;
-}
+// static bool is_cell_in_weight_square(int cx, int cy, int square_x, int square_y)
+// {
+//     return cx >= square_x && cx < square_x + WEIGHT_SQUARE_SIZE &&
+//         cy >= square_y && cy < square_y + WEIGHT_SQUARE_SIZE;
+// }
 
-static bool active_matrix_matches_weight_square(int square_x, int square_y)
-{
-    for (int cy = 0; cy < 8; cy++)
-    {
-        for (int cx = 0; cx < 8; cx++)
-        {
-            const int index = cy * 8 + cx;
-            const bool should_be_active = is_cell_in_weight_square(cx, cy, square_x, square_y);
+// static bool active_matrix_matches_weight_square(int square_x, int square_y)
+// {
+//     for (int cy = 0; cy < 8; cy++)
+//     {
+//         for (int cx = 0; cx < 8; cx++)
+//         {
+//             const int index = cy * 8 + cx;
+//             const bool should_be_active = is_cell_in_weight_square(cx, cy, square_x, square_y);
 
-            if (active[index] != should_be_active)
-            {
-                return false;
-            }
-        }
-    }
+//             if (active[index] != should_be_active)
+//             {
+//                 return false;
+//             }
+//         }
+//     }
 
-    return true;
-}
+//     return true;
+// }
 
 static bool tof_array_sees_wall()
 {
@@ -242,15 +252,44 @@ static bool tof_array_sees_wall()
     return false;
 }
 
+// bool detect_weight()
+// {
+//     // Match exactly one 2x2 active block and require every other cell to be blank.
+//     for (int y = 0; y <= 8 - WEIGHT_SQUARE_SIZE; y++)
+//     {
+//         for (int x = 0; x <= 8 - WEIGHT_SQUARE_SIZE; x++)
+//         {
+//             if (active_matrix_matches_weight_square(x, y))
+//             {
+//                 return true;
+//             }
+//         }
+//     }
+
+//     return false;
+// }
+
 bool detect_weight()
 {
-    // Match exactly one 2x2 active block and require every other cell to be blank.
-    for (int y = 0; y <= 8 - WEIGHT_SQUARE_SIZE; y++)
+
+    for (int y = 0; y < 6; y++)
     {
-        for (int x = 0; x <= 8 - WEIGHT_SQUARE_SIZE; x++)
+        for (int x = 0; x < 7; x++)
         {
-            if (active_matrix_matches_weight_square(x, y))
+            int i = y * 8 + x;
+
+            if (active[i] && active[i + 1] &&
+                active[i + 8] && active[i + 9])
             {
+                two_by_two = true;
+                return true;
+            }
+
+            if (active[i] && active[i + 1] &&
+                active[i + 8] && active[i + 9] &&
+                active[i + 16] && active[i + 17])
+            {
+                two_by_three = true;
                 return true;
             }
         }
@@ -258,7 +297,6 @@ bool detect_weight()
 
     return false;
 }
-
 
 void draw_depth_data(U8G2& u8g2)
 {
