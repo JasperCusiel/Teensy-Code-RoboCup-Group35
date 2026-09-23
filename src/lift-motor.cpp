@@ -28,7 +28,7 @@
 #define STOP 1500
 #define PWM_MAX 255
 #define HOMING_SPEED 200
-#define LIMIT_SWITCH_BACK_OFF 2000
+#define LIMIT_SWITCH_BACK_OFF 1000
 #define PWM_SKIP 60 //was 80
 #define ACCURACY 1000
 #define REACHED_TOLERANCE 2500   // encoder counts
@@ -39,7 +39,7 @@
 #define SERVO_KD 0 //was 0.05
 
 #define LIFTER_UP_POS   (-26000)
-#define LIFTER_DOWN_POS -200
+#define LIFTER_DOWN_POS (-200)
 
 namespace
 {
@@ -62,7 +62,7 @@ namespace
 
     template <uint8_t Pin>
     bool readEndstop()
-    
+
     {
         return read_limit_switch(Pin);
     }
@@ -191,15 +191,16 @@ void lifter_motor_update()
 }
 
 
-void lifter_raise()       { set_targets(LIFTER_UP_POS, LIFTER_UP_POS); }
-void lifter_lower()       { set_targets(LIFTER_DOWN_POS, LIFTER_DOWN_POS); }
+void lifter_raise() { set_targets(LIFTER_UP_POS, LIFTER_UP_POS); }
+void lifter_lower() { set_targets(LIFTER_DOWN_POS, LIFTER_DOWN_POS); }
 void lifter_move_middle() { set_targets(LIFTER_UP_POS / 2, LIFTER_UP_POS / 2); }
 
 bool is_lifter_reached_target()
 {
     return labs(servo1.getActualPosition() - target1) <= REACHED_TOLERANCE &&
-           labs(servo2.getActualPosition() - target2) <= REACHED_TOLERANCE;
+        labs(servo2.getActualPosition() - target2) <= REACHED_TOLERANCE;
 }
+
 long lifter_get_position1()
 {
     return servo1.getActualPosition();
