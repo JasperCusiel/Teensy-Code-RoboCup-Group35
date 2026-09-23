@@ -15,36 +15,100 @@
 
 namespace // Keep variables and helper functions private to this file.
 {
+    constexpr float kPi = 3.14159265f;
     constexpr float kRecoveryHeadingOffsetRad = 1.0f;
-    constexpr float kObstacleTurnRateRadPerSec = 2.0f;
+    constexpr float kObstacleTurnRateRadPerSec = 2.5f;
+    constexpr float kRecoveryRejectAngleRad = 1.5f * kPi;
+    constexpr float kRecoveryExitSpeedMps = 0.10f;
     constexpr float kTurnInPlaceSpeedScale = 0.50f;
     constexpr float kSlowFrontClearanceM = 0.35f;
     constexpr float kHardFrontClearanceM = 0.08f;
-    constexpr float kExplorationScanTurnRateRadPerSec = 0.5f;
+    constexpr float kExplorationScanTurnRateRadPerSec = 1.0f;
     constexpr float kWeightApproachSpeedMps = 0.08f;
-    constexpr uint8_t kRecoveryCyclesBeforeFrontierReject = 40;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
     constexpr float kTurnInPlaceLinearDeadbandMps = 0.01f;
     constexpr float kTurnInPlaceTurnRateDeadbandRadPerSec = 0.01f;
+    constexpr float kAvoidanceReplanDeflectionRad = 0.55f;
+    constexpr uint8_t kAvoidanceReplanCycles = 8;
+    constexpr uint8_t kAvoidanceReplanCooldownCycles = 20;
+    constexpr bool kHeadingHoldTestMode = false;
+    constexpr float kHeadingHoldTestSpeedMps = 0.1f;
     pose_t current_pose = {}; // Stores the latest EKF pose estimate
     velocity_command_t safe_command = {0.0f, 0.0f, 0.0f, true};
     // Most recent command passed through the obstical avoidance.
     float last_steering_direction = 1.0f;
     // Records if the last VFH turn direction was left (+1) or right (-1), used to choose escape direction to spin when VFH can't find a free direction in the FOV.
-    uint8_t recovery_turn_cycles = 0;
+    float recovery_turn_angle_rad = 0.0f;
+    float recovery_last_heading_rad = 0.0f;
+    bool recovery_turn_started = false;
+    uint8_t avoidance_replan_cycles = 0;
+    uint8_t avoidance_replan_cooldown_cycles = 0;
+    bool heading_hold_test_started = false;
+    float heading_hold_test_heading = 0.0f;
 
-
-    void record_recovery_turn()
+    void reset_recovery_turn_tracking()
     {
-        if (recovery_turn_cycles < kRecoveryCyclesBeforeFrontierReject)
+        recovery_turn_angle_rad = 0.0f;
+        recovery_last_heading_rad = 0.0f;
+        recovery_turn_started = false;
+    }
+
+    void record_recovery_turn(float heading)
+    {
+        if (!recovery_turn_started)
         {
-            ++recovery_turn_cycles;
+            recovery_last_heading_rad = heading;
+            recovery_turn_started = true;
+            return;
         }
 
-        if (recovery_turn_cycles >= kRecoveryCyclesBeforeFrontierReject)
+        recovery_turn_angle_rad += fabsf(wrap_angle_rad(heading - recovery_last_heading_rad));
+        recovery_last_heading_rad = heading;
+
+        if (recovery_turn_angle_rad >= kRecoveryRejectAngleRad)
         {
             navigation_reject_current_goal();
-            recovery_turn_cycles = 0;
+            reset_recovery_turn_tracking();
+        }
+    }
+
+    void reset_avoidance_replan_tracking()
+    {
+        avoidance_replan_cycles = 0;
+        avoidance_replan_cooldown_cycles = 0;
+    }
+
+    void update_avoidance_replan_tracking(bool avoidance_active)
+    {
+        if (avoidance_replan_cooldown_cycles > 0)
+        {
+            --avoidance_replan_cooldown_cycles;
+        }
+
+        if (!navigation_has_path())
+        {
+            avoidance_replan_cycles = 0;
+            return;
+        }
+
+        if (avoidance_active)
+        {
+            if (avoidance_replan_cycles < kAvoidanceReplanCycles)
+            {
+                ++avoidance_replan_cycles;
+            }
+        }
+        else if (avoidance_replan_cycles > 0)
+        {
+            --avoidance_replan_cycles;
+        }
+
+        if (avoidance_replan_cycles >= kAvoidanceReplanCycles &&
+            avoidance_replan_cooldown_cycles == 0)
+        {
+            navigation_request_replan();
+            avoidance_replan_cycles = 0;
+            avoidance_replan_cooldown_cycles = kAvoidanceReplanCooldownCycles;
         }
     }
 
@@ -54,12 +118,15 @@ namespace // Keep variables and helper functions private to this file.
             fabsf(command.turn_rate) > kTurnInPlaceTurnRateDeadbandRadPerSec;
     }
 
-    velocity_command_t avoid_obstacles(const velocity_command_t& target, const pose_t& pose)
+    velocity_command_t avoid_obstacles(const velocity_command_t& target,
+                                       const pose_t& pose,
+                                       bool following_path)
     {
         // Bypass VFH if stop is commanded (prevents VFH trying to command movement)
         if (target.stop)
         {
-            recovery_turn_cycles = 0;
+            reset_recovery_turn_tracking();
+            reset_avoidance_replan_tracking();
             return target;
         }
 
@@ -78,19 +145,43 @@ namespace // Keep variables and helper functions private to this file.
         {
             // Keep rotating the same way so recovery does not oscillate left/right.
             const float recovery_direction = last_steering_direction;
-            record_recovery_turn();
+            update_avoidance_replan_tracking(true);
+            record_recovery_turn(pose.theta);
             return {
                 wrap_angle_rad(pose.theta + recovery_direction * kRecoveryHeadingOffsetRad),
                 0.0f,
-                recovery_direction * kObstacleTurnRateRadPerSec,
+                (recovery_direction * kObstacleTurnRateRadPerSec),
                 false
             };
         }
 
         if (is_turn_in_place_command(target))
         {
-            recovery_turn_cycles = 0;
+            const bool exit_recovery =
+                following_path &&
+                recovery_turn_started &&
+                forward_clearance > kHardFrontClearanceM;
+            reset_recovery_turn_tracking();
+            reset_avoidance_replan_tracking();
             last_steering_direction = target.turn_rate > 0.0f ? 1.0f : -1.0f;
+            if (exit_recovery)
+            {
+                float speed = kRecoveryExitSpeedMps;
+                if (forward_clearance < kSlowFrontClearanceM)
+                {
+                    const float clearance_scale =
+                        (forward_clearance - kHardFrontClearanceM) /
+                        (kSlowFrontClearanceM - kHardFrontClearanceM);
+                    speed *= fminf(1.0f, fmaxf(0.0f, clearance_scale));
+                }
+
+                return {
+                    wrap_angle_rad(pose.theta + steering_relative),
+                    speed,
+                    0.0f,
+                    false
+                };
+            }
             return target;
         }
 
@@ -109,6 +200,11 @@ namespace // Keep variables and helper functions private to this file.
         // Slow down based on obstical avoidance deflection amount, larger VFH avoidance -> slower speed.
         // At 90 degree or more, turn in place instead of arc.
         const float speed_scale = fmaxf(0.0f, cosf(deflection));
+        const bool avoidance_active =
+            deflection >= kAvoidanceReplanDeflectionRad ||
+            forward_clearance < kSlowFrontClearanceM ||
+            speed_scale <= kTurnInPlaceSpeedScale;
+        update_avoidance_replan_tracking(avoidance_active);
         safe.linear_speed *= speed_scale;
         if (forward_clearance < kSlowFrontClearanceM)
         {
@@ -127,12 +223,12 @@ namespace // Keep variables and helper functions private to this file.
                     : last_steering_direction;
             safe.linear_speed = 0.0f;
             safe.turn_rate = turn_direction * kObstacleTurnRateRadPerSec;
-            record_recovery_turn();
+            record_recovery_turn(pose.theta);
         }
         else
         {
             safe.turn_rate = 0.0f;
-            recovery_turn_cycles = 0;
+            reset_recovery_turn_tracking();
         }
         // A zero forward speed is still a valid rotate-in-place command.
         safe.stop = false;
@@ -150,21 +246,20 @@ namespace // Keep variables and helper functions private to this file.
         };
     }
 
-    velocity_command_t weight_approach_command(const pose_t& pose)
+    velocity_command_t heading_hold_test_command(const pose_t& pose)
     {
+        if (!heading_hold_test_started)
+        {
+            heading_hold_test_heading = pose.theta;
+            heading_hold_test_started = true;
+        }
+
         return {
-            pose.theta,
-            kWeightApproachSpeedMps,
+            heading_hold_test_heading,
+            kHeadingHoldTestSpeedMps,
             0.0f,
             false
         };
-    }
-
-    bool should_drive_towards_weight()
-    {
-        const weight_pickup_state_t pickup_state = weight_pickup_get_state();
-        return pickup_state == PICKUP_STATUS_IDLE ||
-            pickup_state == PICKUP_STATUS_ALIGNING;
     }
 } // namespace
 
@@ -176,7 +271,9 @@ void autonomy_init()
     navigation_init();
     motion_controller_init();
     last_steering_direction = 1.0f;
-    recovery_turn_cycles = 0;
+    reset_recovery_turn_tracking();
+    reset_avoidance_replan_tracking();
+    heading_hold_test_started = false;
     // Publish stop command until first planning cycle produces a safe motion command.
     safe_command = {current_pose.theta, 0.0f, 0.0f, true};
 }
@@ -192,14 +289,22 @@ void autonomy_task()
     // Advance the mission state
     mission_task();
 
+    if (kHeadingHoldTestMode)
+    {
+        safe_command = mission_should_stop()
+                           ? velocity_command_t{current_pose.theta, 0.0f, 0.0f, true}
+                           : heading_hold_test_command(current_pose);
+        return;
+    }
+
     // Select or update navigation goal and path
     navigation_task();
 
     if (mission_get_state() == MISSION_WEIGHT_DETECTED)
     {
         //safe_command = should_drive_towards_weight()
-            //? weight_approach_command(current_pose)
-            //: velocity_command_t{current_pose.theta, 0.0f, 0.0f, true};
+        //? weight_approach_command(current_pose)
+        //: velocity_command_t{current_pose.theta, 0.0f, 0.0f, true};
         return;
     }
 
@@ -210,7 +315,7 @@ void autonomy_task()
             ? exploration_scan_command(current_pose)
             : pure_pursuit_update(path, &current_pose);
     // Pass through VFH obstacle avoidance
-    safe_command = avoid_obstacles(target, current_pose);
+    safe_command = avoid_obstacles(target, current_pose, path != nullptr);
     // Override if mission state commands stop.
     if (mission_should_stop())
     {
