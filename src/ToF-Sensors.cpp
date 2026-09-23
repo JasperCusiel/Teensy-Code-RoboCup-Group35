@@ -198,16 +198,20 @@ double SystemAngle;
 
 void PlotPolarData(uint8_t sensor_num, uint8_t current_zone, uint16_t r)
 {
+    const double part_zone_angle =
+        (StartingZoneAngle + ZoneFOVChangePerStep * current_zone) -
+        (HorizontalFOVofSensor / 2.0);
+    SystemAngle = -80 + 20.0 * sensor_num + part_zone_angle;
+
     double corrected_distance = 0;
 
-    if (r > 60000)
+    if (r == 0 || r > 60000)
     {
-        r = 0;
+        LidarAngle[sensor_num * NumOfZonesPerSensor + current_zone] = static_cast<float>(SystemAngle);
+        LidarDistance[sensor_num * NumOfZonesPerSensor + current_zone] = 0;
+        return;
     }
 
-    double part_zone_angle = (StartingZoneAngle + ZoneFOVChangePerStep * current_zone) - (HorizontalFOVofSensor / 2.0);
-
-    SystemAngle = -80 + 20.0 * sensor_num + part_zone_angle;
     corrected_distance = pow(
         pow(RadarCircleRadius, 2) + pow(r, 2) - (2 * RadarCircleRadius * r * cos(
             (180 - part_zone_angle) / (180) * Pi)), 0.5);
