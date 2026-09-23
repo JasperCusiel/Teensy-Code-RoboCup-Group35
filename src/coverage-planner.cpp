@@ -10,6 +10,7 @@ namespace
 {
     constexpr int kSurveySpacingCells = 6; // 0.6 m at the current map resolution.
     constexpr int kCoverageMarginCells = 3; // Keep survey points away from arena edges.
+    constexpr int kStartY = 1;
     constexpr int kCandidateClearanceCells = 3; // Reject cells close to mapped obstacles.
     constexpr uint16_t kMaxCoverageGoals = 128;
 
@@ -69,7 +70,7 @@ namespace
 
         bool left_to_right = true;
 
-        for (int y = kCoverageMarginCells;
+        for (int y = kStartY + kCoverageMarginCells;
              y < MAP_HEIGHT - kCoverageMarginCells;
              y += kSurveySpacingCells)
         {
