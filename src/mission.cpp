@@ -110,7 +110,7 @@ void mission_task()
             enter_state(MISSION_STOPPED);
         }
         // Enter idle state once mission is complete (at home)
-        else if (navigation_goal_reached() & (get_current_color() == get_base_color()))
+        else if (navigation_goal_reached() && (get_current_color() == get_base_color()))
         {
             enter_state(MISSION_COMPLETE);
         }
@@ -125,7 +125,9 @@ void mission_task()
             {
                 collected_weight_count = 0;
                 enter_state(MISSION_EXPLORE);
-            } else {
+            }
+            else
+            {
                 enter_state(MISSION_RETURN_HOME);
             }
         }
@@ -185,6 +187,7 @@ void mission_report_pickup_complete(bool success)
         pickup_complete_event = true;
     }
 }
+
 void mission_report_dropoff_complete(bool success)
 {
     if (state == MISSION_COMPLETE)
@@ -193,6 +196,7 @@ void mission_report_dropoff_complete(bool success)
         dropoff_complete_event = true;
     }
 }
+
 uint8_t mission_get_weight_count() { return collected_weight_count; }
 
 void mission_return_home()
