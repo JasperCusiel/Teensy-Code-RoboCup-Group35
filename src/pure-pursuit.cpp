@@ -8,7 +8,6 @@
 
 #include <math.h>
 #include <wiring.h>
-#include "math_utils.h"
 
 // This module implements the pure pursuit algorthm which takes a set of points and generates smooth motion commands to link the points.
 
@@ -19,6 +18,16 @@ namespace
     constexpr float kGoalToleranceM = 0.15f;
     constexpr float kNominalSpeedMps = 0.30f;
     constexpr float kMinimumTrackingSpeedMps = 0.08f;
+    constexpr float kTurnInPlaceHeadingErrorRad = PI / 3.0f;
+    constexpr float kTurnInPlaceTurnRateRadPerSec = 2.5f;
+
+    // Helper functions.
+    float wrap_angle(float angle)
+    {
+        while (angle > PI) angle -= 2.0f * PI;
+        while (angle < -PI) angle += 2.0f * PI;
+        return angle;
+    }
 
     void cell_to_world(grid_point_t cell, float* x, float* y)
     {
@@ -89,7 +98,18 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
     const int lookahead_index = find_lookahead_index(path, robot_pose);
 
     command.heading = heading_to_cell(robot_pose, path->points[lookahead_index]);
-    const float heading_error = wrap_angle_rad(command.heading - robot_pose->theta);
+    const float heading_error = wrap_angle(command.heading - robot_pose->theta);
+    if (fabsf(heading_error) >= kTurnInPlaceHeadingErrorRad)
+    {
+        command.heading = robot_pose->theta;
+        command.linear_speed = 0.0f;
+        command.turn_rate = heading_error > 0.0f
+                                ? kTurnInPlaceTurnRateRadPerSec
+                                : -kTurnInPlaceTurnRateRadPerSec;
+        command.stop = false;
+        return command;
+    }
+
     const float alignment = fmaxf(0.35f, cosf(heading_error));
 
     command.linear_speed = alignment > 0.0f ? fmaxf(kMinimumTrackingSpeedMps, kNominalSpeedMps * alignment) : 0.0f;
@@ -109,4 +129,3 @@ bool pure_pursuit_path_complete(const path_t* path, const pose_t* robot_pose)
     return squared_distance_to_cell(robot_pose, path->points[path->length - 1]) <=
         kGoalToleranceM * kGoalToleranceM;
 }
-
