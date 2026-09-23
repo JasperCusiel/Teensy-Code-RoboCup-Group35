@@ -10,9 +10,43 @@
 // Create node for every point in map
 static astar_node_t nodes[MAP_WIDTH][MAP_HEIGHT];
 
+namespace
+{
+    constexpr int kObstacleClearanceCells = 3;
+}
+
 static bool in_map(int x, int y)
 {
     return x >= 0 && y >= 0 && x < MAP_WIDTH && y < MAP_HEIGHT;
+}
+
+bool astar_has_obstacle_clearance(int x, int y)
+{
+    if (!in_map(x, y))
+    {
+        return false;
+    }
+
+    for (int dx = -kObstacleClearanceCells; dx <= kObstacleClearanceCells; ++dx)
+    {
+        for (int dy = -kObstacleClearanceCells; dy <= kObstacleClearanceCells; ++dy)
+        {
+            if (dx * dx + dy * dy >
+                kObstacleClearanceCells * kObstacleClearanceCells)
+            {
+                continue;
+            }
+
+            const int nx = x + dx;
+            const int ny = y + dy;
+            if (!in_map(nx, ny) || map_get_state(nx, ny) == OCCUPIED)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 static bool is_traversable(int x, int y, int start_x, int start_y, int goal_x, int goal_y)
@@ -25,7 +59,7 @@ static bool is_traversable(int x, int y, int start_x, int start_y, int goal_x, i
         (x == goal_x && y == goal_y))
         return true;
 
-    return map_get_state(x, y) == FREE;
+    return map_get_state(x, y) == FREE && astar_has_obstacle_clearance(x, y);
 }
 
 static uint16_t heuristic(const uint8_t x1, const uint8_t y1, const uint8_t x2, const uint8_t y2)

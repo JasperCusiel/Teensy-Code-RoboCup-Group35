@@ -38,6 +38,7 @@ typedef struct
 } astar_node_t;
 
 void astar_init();
+bool astar_has_obstacle_clearance(int x, int y);
 bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* path);
 
 #endif // ROBOCUP_ASTAR_H
