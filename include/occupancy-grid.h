@@ -14,8 +14,10 @@
 // reconstructs the same occupancy grid as the firmware.
 #define MAP_LOG_ODDS_MIN (-5.0f)
 #define MAP_LOG_ODDS_MAX  5.0f
-#define MAP_LOG_ODDS_FREE (-0.4f)
-#define MAP_LOG_ODDS_OCC   0.85f
+// Keep occupied evidence stronger than free evidence so a few grazing clear
+// rays do not immediately re-open a recently detected obstacle.
+#define MAP_LOG_ODDS_FREE (-0.20f)
+#define MAP_LOG_ODDS_OCC   1.20f
 
 #define MAP_WIDTH (int8_t)(3.0f * MAP_CELLS_PER_M)
 #define MAP_HEIGHT (int8_t)(5.0f * MAP_CELLS_PER_M)
