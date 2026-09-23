@@ -227,7 +227,14 @@ namespace // Keep variables and helper functions private to this file.
         }
         else
         {
-            safe.turn_rate = 0.0f;
+            // Preserve pure-pursuit feed-forward curvature, but reduce angular
+            // speed with the forward speed so slowing for VFH does not sharpen
+            // the commanded arc.
+            const float turn_rate_scale =
+                fabsf(target.linear_speed) > 0.001f
+                    ? safe.linear_speed / target.linear_speed
+                    : 0.0f;
+            safe.turn_rate *= turn_rate_scale;
             reset_recovery_turn_tracking();
         }
         // A zero forward speed is still a valid rotate-in-place command.
