@@ -27,4 +27,7 @@ void update_base_color();
 // Returns stored base color
 base_color_t get_base_color();
 
+// Returns current colour reading
+base_color_t get_current_color();
+
 #endif // ROBOCUP_COLOUR_SENSOR_H

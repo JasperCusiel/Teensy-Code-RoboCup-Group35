@@ -11,6 +11,7 @@ Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS347
 
 // Stores the color profile of the base
 color_t base = {0, 0, 0, 0, COLOR_UNDEFINED};
+color_t current = {0, 0, 0, 0, COLOR_UNDEFINED};
 
 // Initialize sensor on I2C and set the base color (we assume the robot is always started in the colored home base square.
 bool colour_sensor_init()
@@ -44,6 +45,24 @@ void update_base_color()
     {
         base.base_color = COLOR_BLUE;
     }
+}
+
+base_color_t get_current_color()
+{
+    // Get raw reading from colour sensor
+    tcs.getRawData(&current.red, &current.green, &current.blue, &base.clear);
+
+    if (base.green > 100 && base.blue > 100)
+    {
+        current.base_color = COLOR_BLUE;
+    }
+    else if (base.green > 100)
+    {
+        current.base_color = COLOR_BLUE;
+    } else {
+        current.base_color = COLOR_UNDEFINED;
+    }
+    return current.base_color;
 }
 
 base_color_t get_base_color()

@@ -5,6 +5,7 @@
 
 #include "button.h"
 #include "navigation.h"
+#include "colour-sensor.h"
 
 // Mission module handles the mission logic via FSM to
 // determine the robots behavior -> IDLE, EXPLORE, WEIGHT_DETECTED, RETURN_HOME, etc.
@@ -109,7 +110,7 @@ void mission_task()
             enter_state(MISSION_STOPPED);
         }
         // Enter idle state once mission is complete (at home)
-        else if (navigation_goal_reached())
+        else if (navigation_goal_reached() & (get_current_color() == get_base_color()))
         {
             enter_state(MISSION_COMPLETE);
         }
