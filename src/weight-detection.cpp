@@ -44,53 +44,100 @@ bool weight_detection_init()
 
 void weight_detection_task()
 {
-    uint32_t sum[64] = {0};
-    uint16_t temp[64];
+    constexpr uint8_t kRequiredDetections = 3;
 
-    for (int n = 0; n < 8; n++)
+    static uint8_t consecutive_detections = 0;
+
+    uint16_t frame[64] = {};
+
+    // Read one frame. Never process data from a failed request.
+    if (tof.getAllData(frame) != 0)
     {
-        tof.getAllData(temp);
+        consecutive_detections = 0;
+        weight_detected = false;
+        wall_detected = false;
+        two_by_two = false;
+        two_by_three = false;
 
-        for (int i = 0; i < 64; i++)
+        for (int i = 0; i < 64; ++i)
         {
-            sum[i] += temp[i];
+            active[i] = false;
         }
 
-        delay(20);
+        return;
     }
 
-    for (int i = 0; i < 64; i++)
-    {
-        buf[i] = sum[i] / 8;
-    }
     int active_count = 0;
-    for (int i = 0; i < 64; i++)
-    {
-        int16_t d = (int16_t)calibration[i] - (int16_t)buf[i];
 
-        active[i] = (d > WEIGHT_MIN_DELTA && d < WEIGHT_MAX_DELTA);
+    for (int i = 0; i < 64; ++i)
+    {
+        buf[i] = frame[i];
+
+        // Reject obvious invalid values. Add any other invalid
+        // values specified by the sensor protocol here.
+        const bool valid =
+            frame[i] != 0 &&
+            frame[i] != UINT16_MAX &&
+            calibration[i] != 0 &&
+            calibration[i] != UINT16_MAX;
+
+        const int32_t delta =
+            static_cast<int32_t>(calibration[i]) -
+            static_cast<int32_t>(frame[i]);
+
+        active[i] =
+            valid &&
+            delta > WEIGHT_MIN_DELTA &&
+            delta < WEIGHT_MAX_DELTA;
+
         if (active[i])
         {
-            active_count++;
+            ++active_count;
         }
     }
 
     if (active_count > WEIGHT_MAX_ACTIVE_CELLS)
     {
-        for (int i = 0; i < 64; i++)
+        for (int i = 0; i < 64; ++i)
         {
             active[i] = false;
         }
     }
-    filter();
-    wall_detected = tof_array_sees_wall();
-    weight_detected = !wall_detected && detect_weight();
 
-    if (weight_detected)
+    filter();
+
+    // Reset diagnostic flags before evaluating this frame.
+    two_by_two = false;
+    two_by_three = false;
+
+    wall_detected = tof_array_sees_wall();
+
+    const bool candidate =
+        !wall_detected && detect_weight();
+
+    if (candidate)
+    {
+        if (consecutive_detections < kRequiredDetections)
+        {
+            ++consecutive_detections;
+        }
+    }
+    else
+    {
+        consecutive_detections = 0;
+    }
+
+    const bool previously_detected = weight_detected;
+
+    weight_detected =
+        consecutive_detections >= kRequiredDetections;
+
+    // Report once when detection becomes confirmed.
+    if (weight_detected && !previously_detected)
     {
         mission_report_weight_detected();
     }
-} 
+}
 
 void drawToF_dithered_fast(U8G2& u8g2,
                            uint16_t d_max,
@@ -102,13 +149,16 @@ void drawToF_dithered_fast(U8G2& u8g2,
 
     if (weight_detected)
     {
-        if (two_by_two){
+        if (two_by_two)
+        {
             u8g2.drawStr(70, 10, "2x2");
         }
-        else if (two_by_three){
+        else if (two_by_three)
+        {
             u8g2.drawStr(70, 10, "2x3");
         }
-        else{
+        else
+        {
             u8g2.drawStr(70, 10, "WEIGHT!");
         }
     }
@@ -230,7 +280,6 @@ static bool tof_array_sees_wall()
 
 bool detect_weight()
 {
-
     for (int y = 0; y < 6; y++)
     {
         for (int x = 0; x < 7; x++)
