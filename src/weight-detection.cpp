@@ -262,11 +262,6 @@ void draw_depth_data(U8G2& u8g2)
     // tof.getAllData(buf);
 
     drawToF_dithered_fast(u8g2, 200, 0, 0);
-    if (read_button(A9) == LOW)
-    {
-        u8g2.drawStr(70, 10, "calibrating...");
-        fill_calibration_matrix();
-    }
 }
 
 
