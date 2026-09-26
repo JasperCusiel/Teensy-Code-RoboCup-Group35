@@ -52,7 +52,7 @@ void weight_pickup_state_update()
         }
         if (is_weight_detected_ir_reflective())
         {
-            if (is_lifter_reached_target() && (mission_get_state() == MISSION_EXPLORE))
+            if (is_lifter_reached_target() && mission_should_explore())
             {
                 mission_report_weight_detected();
                 motion_controller_override_drive(0.0f, 0.0f);
@@ -192,4 +192,3 @@ weight_pickup_state_t weight_pickup_get_state()
 {
     return current_state;
 }
-
