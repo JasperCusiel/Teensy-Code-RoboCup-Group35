@@ -125,16 +125,20 @@ bool coverage_planner_get_goal(grid_point_t* goal)
         return false;
     }
 
-    while (current_goal < goal_count)
+    // Look ahead for a goal that is usable with the current map, but do not
+    // consume unavailable goals. UNKNOWN cells and temporarily blocked FREE
+    // cells may become valid after more scan evidence arrives.
+    for (uint16_t candidate_index = current_goal;
+         candidate_index < goal_count;
+         ++candidate_index)
     {
-        const grid_point_t candidate = goals[current_goal];
+        const grid_point_t candidate = goals[candidate_index];
         if (cell_has_clearance(candidate.x, candidate.y))
         {
+            current_goal = candidate_index;
             *goal = candidate;
             return true;
         }
-
-        ++current_goal;
     }
 
     return false;

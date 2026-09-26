@@ -15,9 +15,10 @@ namespace
     constexpr int kFullReverseUs = 1050;
     constexpr int kStopUs = 1500;
     constexpr int kPWM_MAX = 255;
-    constexpr float kOpenLoopMaxWheelSpeedMps = 0.30f;
     constexpr float kOpenLoopDeadbandMps = 0.005f;
-    constexpr uint8_t kPwmSkip = 120;
+    constexpr uint8_t kPwmSkip = 170;
+    constexpr uint8_t kLeftSkip = 0;
+    constexpr uint8_t kRightSkip = 60;
 
 
     template <Servo& Motor, bool MotorInverted>
@@ -42,15 +43,15 @@ namespace
     using Motor2Callbacks = MotorCallbacks<right_driver, false>;
 
 
-    int16_t wheel_speed_to_pwm(float wheel_speed_mps)
+    int16_t wheel_speed_to_pwm(float wheel_speed_mps, int base_skip)
     {
-        if (wheel_speed_mps > kOpenLoopMaxWheelSpeedMps)
+        if (wheel_speed_mps > kDrivetrainMaxWheelSpeedMps)
         {
-            wheel_speed_mps = kOpenLoopMaxWheelSpeedMps;
+            wheel_speed_mps = kDrivetrainMaxWheelSpeedMps;
         }
-        else if (wheel_speed_mps < -kOpenLoopMaxWheelSpeedMps)
+        else if (wheel_speed_mps < -kDrivetrainMaxWheelSpeedMps)
         {
-            wheel_speed_mps = -kOpenLoopMaxWheelSpeedMps;
+            wheel_speed_mps = -kDrivetrainMaxWheelSpeedMps;
         }
 
         const bool reverse = wheel_speed_mps < 0.0f;
@@ -60,31 +61,36 @@ namespace
             return 0;
         }
 
-        const float normalized = magnitude_mps / kOpenLoopMaxWheelSpeedMps;
-        const int pwm = kPwmSkip + static_cast<int>((kPWM_MAX - kPwmSkip) * normalized);
-        return reverse ? -pwm : pwm;
+        const float normalized = magnitude_mps / kDrivetrainMaxWheelSpeedMps;
+        const int pwm = (base_skip + kPwmSkip) + static_cast<int>((kPWM_MAX - (kPwmSkip + base_skip)) * normalized);
+        return reverse ? (-pwm) : pwm;
     }
 } // namespace
 
 void set_open_loop_wheel_speed_targets(float left_mps, float right_mps)
 {
-    if (left_mps == 0.0f)
+    if (fabsf(left_mps) < kOpenLoopDeadbandMps)
     {
         Motor1Callbacks::brake();
     }
     else
     {
-        Motor1Callbacks::write(wheel_speed_to_pwm(left_mps));
+        Motor1Callbacks::write(wheel_speed_to_pwm(left_mps, kLeftSkip));
     }
 
-    if (right_mps == 0.0f)
+    if (fabsf(right_mps) < kOpenLoopDeadbandMps)
     {
         Motor2Callbacks::brake();
     }
     else
     {
-        Motor2Callbacks::write(wheel_speed_to_pwm(right_mps));
+        Motor2Callbacks::write(wheel_speed_to_pwm(right_mps, kRightSkip));
     }
+    // Serial.printf(
+    //     "FINAL: L=%.3f R=%.3f\n",
+    //     left_mps,
+    //     right_mps
+    // );
 }
 
 void drivetrain_init()

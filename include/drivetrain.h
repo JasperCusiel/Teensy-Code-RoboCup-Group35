@@ -5,6 +5,8 @@
 #ifndef ROBOCUP_DRIVETRAIN_H
 #define ROBOCUP_DRIVETRAIN_H
 
+constexpr float kDrivetrainMaxWheelSpeedMps = 0.30f;
+
 void drivetrain_init();
 
 // Set wheel speed targets in metres per second.

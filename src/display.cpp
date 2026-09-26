@@ -438,6 +438,9 @@ void draw_mission()
     case MISSION_COMPLETE:
         display.drawStr(42, 10, "COMPLETE");
         break;
+    case MISSION_RECOVERING:
+        display.drawStr(42, 10, "RECOVER");
+        break;
     case MISSION_RETURN_HOME:
         display.drawStr(42, 10, "RETURN HOME");
         break;
