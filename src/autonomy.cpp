@@ -16,11 +16,11 @@
 namespace // Keep variables and helper functions private to this file.
 {
     constexpr float kPi = 3.14159265f;
-    constexpr float kRecoveryHeadingOffsetRad = 1.0f;
+    constexpr float kRecoveryHeadingOffsetRad = 1.5f;
     constexpr float kObstacleTurnRateRadPerSec = 2.5f;
     constexpr float kRecoveryRejectAngleRad = 1.5f * kPi;
     constexpr float kRecoveryExitSpeedMps = 0.10f;
-    constexpr float kTurnInPlaceSpeedScale = 0.50f;
+    constexpr float kTurnInPlaceSpeedScale = 0.750f;
     constexpr float kSlowFrontClearanceM = 0.35f;
     constexpr float kHardFrontClearanceM = 0.08f;
     constexpr float kExplorationScanTurnRateRadPerSec = 1.0f;
@@ -318,7 +318,7 @@ void autonomy_task()
     // Get heading and forward speed from pure pursuit
     const path_t* path = navigation_get_path();
     const velocity_command_t target =
-        mission_should_explore() && path == nullptr
+        (mission_should_explore() || mission_should_return_home()) && path == nullptr
             ? exploration_scan_command(current_pose)
             : pure_pursuit_update(path, &current_pose);
     // Pass through VFH obstacle avoidance
