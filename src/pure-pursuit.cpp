@@ -7,6 +7,7 @@
 #include "mapping.h"
 
 #include <math.h>
+#include <Arduino.h>
 #include <wiring.h>
 
 // This module implements the pure pursuit algorthm which takes a set of points and generates smooth motion commands to link the points.
@@ -14,13 +15,20 @@
 namespace
 {
     // PP config
-    constexpr float kLookaheadDistanceM = 0.30f;
+    constexpr float kLookaheadDistanceM = 0.50f;
     constexpr float kGoalToleranceM = 0.15f;
     constexpr float kNominalSpeedMps = 0.30f;
-    constexpr float kMinimumTrackingSpeedMps = 0.08f;
-    constexpr float kTurnInPlaceHeadingErrorRad = PI / 3.0f; // 60 degrees
-    constexpr float kTurnInPlaceTurnRateRadPerSec = 2.5f;
+    constexpr float kMinimumTrackingSpeedMps = 0.1f;
+
+    // Turn-in-place config
+    constexpr float kTurnInPlaceEnterErrorRad = PI / 4.0f; // 45 deg
+    constexpr float kTurnInPlaceExitErrorRad = PI / 12.0f; // 15 deg
+    constexpr float kTurnInPlaceKp = 2.0f;
+    constexpr float kMaxTurnInPlaceRateRadPerSec = 1.0f;
+
     constexpr float kMaxTrackingTurnRateRadPerSec = 2.5f;
+
+    bool turning_in_place = false;
 
     // Helper functions.
     float wrap_angle(float angle)
@@ -90,9 +98,13 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
         robot_pose != nullptr ? robot_pose->theta : 0.0f,
         0.0f, 0.0f, true
     };
+
     if (path == nullptr || robot_pose == nullptr || path->length == 0 ||
         pure_pursuit_path_complete(path, robot_pose))
     {
+        turning_in_place = false;
+        // Serial.println(
+        //     "path == nullptr || robot_pose == nullptr || path->length == 0 || pure_pursuit_path_complete(path, robot_pose)");
         return command;
     }
 
@@ -104,14 +116,40 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
 
     const float heading_error = wrap_angle(command.heading - robot_pose->theta);
 
-    // If facing too far away from the path direction,
-    // rotate in place before driving.
-    if (fabsf(heading_error) >= kTurnInPlaceHeadingErrorRad)
+    // Enter turn-in-place mode if we are facing substantially
+    // away from the path.
+    if (!turning_in_place &&
+        fabsf(heading_error) >= kTurnInPlaceEnterErrorRad)
     {
-        command.linear_speed = 0.0f;
-        command.turn_rate = heading_error > 0.0f ? kTurnInPlaceTurnRateRadPerSec : -kTurnInPlaceTurnRateRadPerSec;
-        command.stop = false;
-        return command;
+        turning_in_place = true;
+    }
+
+    // Once turning in place, remain in this mode until we are
+    // well aligned with the path. This hysteresis prevents rapid
+    // switching between tracking and turn-in-place.
+    if (turning_in_place)
+    {
+        if (fabsf(heading_error) <= kTurnInPlaceExitErrorRad)
+        {
+            turning_in_place = false;
+        }
+        else
+        {
+            command.linear_speed = 0.0f;
+
+            command.turn_rate =
+                kTurnInPlaceKp * heading_error;
+
+            command.turn_rate = fmaxf(
+                -kMaxTurnInPlaceRateRadPerSec,
+                fminf(
+                    kMaxTurnInPlaceRateRadPerSec,
+                    command.turn_rate));
+
+            command.stop = false;
+            // Serial.println("else");
+            return command;
+        }
     }
 
     // Actual distance from robot to selected lookahead point.
@@ -120,6 +158,7 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
     // Protect against division by zero.
     if (lookahead_distance < 0.001f)
     {
+        // Serial.println("lookahead_distance < 0.001f");
         return command;
     }
 
@@ -146,6 +185,15 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
     command.turn_rate = fmaxf(-kMaxTrackingTurnRateRadPerSec, fminf(kMaxTrackingTurnRateRadPerSec, command.turn_rate));
 
     command.stop = false;
+
+    // Serial.printf(
+    //     "PP: idx=%d heading=%.1f err=%.1f v=%.3f w=%.3f\n",
+    //     lookahead_index,
+    //     command.heading * 180.0f / PI,
+    //     heading_error * 180.0f / PI,
+    //     command.linear_speed,
+    //     command.turn_rate
+    // );
 
     return command;
 }
