@@ -14,9 +14,11 @@ namespace
 {
     // Functions and variables private to module.
     constexpr uint8_t kTargetWeightCount = 3; // Number of weights to collect before returning home
+    constexpr uint8_t kRecoveryFailuresBeforeReturnHome = 3;
 
     mission_state_t state = MISSION_IDLE; //MISSION IDLE
     uint8_t collected_weight_count = 0;
+    uint8_t recovery_failure_count = 0;
     bool weight_detected_event = false;
     bool pickup_complete_event = false;
     bool pickup_succeeded = false;
@@ -44,12 +46,38 @@ namespace
             navigation_request_replan();
         }
     }
+
+    void reject_or_clear_navigation_goal()
+    {
+        if (navigation_has_goal())
+        {
+            navigation_reject_current_goal();
+        }
+        else
+        {
+            navigation_clear_goal();
+        }
+    }
+
+    void handle_exploration_path_failure()
+    {
+        reject_or_clear_navigation_goal();
+        if (recovery_failure_count < kRecoveryFailuresBeforeReturnHome)
+        {
+            ++recovery_failure_count;
+        }
+
+        enter_state(recovery_failure_count >= kRecoveryFailuresBeforeReturnHome
+                        ? MISSION_RETURN_HOME
+                        : MISSION_RECOVERING);
+    }
 } // namespace
 
 void mission_init()
 {
     state = MISSION_IDLE;
     collected_weight_count = 0;
+    recovery_failure_count = 0;
     weight_detected_event = false;
     pickup_complete_event = false;
     pickup_succeeded = false;
@@ -76,13 +104,17 @@ void mission_task()
         }
         else if (navigation_path_failed())
         {
-            // Stop if nav failed while exploring.
-            enter_state(MISSION_STOPPED);
+            handle_exploration_path_failure();
         }
         else if (navigation_exploration_complete())
         {
             // Coverage is complete, return to the saved base cell.
+            recovery_failure_count = 0;
             enter_state(MISSION_RETURN_HOME);
+        }
+        else if (navigation_has_path())
+        {
+            recovery_failure_count = 0;
         }
 
         break;
@@ -99,19 +131,47 @@ void mission_task()
                 ++collected_weight_count;
             }
             // Return home only entered after collecting target number of weights.
+            recovery_failure_count = 0;
             enter_state(collected_weight_count >= kTargetWeightCount ? MISSION_RETURN_HOME : MISSION_EXPLORE);
         }
         break;
 
+    case MISSION_RECOVERING:
+        // Keep exploration alive after a failed target: scan, pick another goal,
+        // and only give up on exploring after repeated recovery failures.
+        if (weight_detected_event)
+        {
+            weight_detected_event = false;
+            recovery_failure_count = 0;
+            enter_state(MISSION_WEIGHT_DETECTED);
+        }
+        else if (navigation_path_failed())
+        {
+            handle_exploration_path_failure();
+        }
+        else if (navigation_exploration_complete())
+        {
+            recovery_failure_count = 0;
+            enter_state(MISSION_RETURN_HOME);
+        }
+        else if (navigation_has_path())
+        {
+            recovery_failure_count = 0;
+            enter_state(MISSION_EXPLORE);
+        }
+        break;
+
     case MISSION_RETURN_HOME:
-        // Stop if we cant navigate home.
+        // If home is temporarily unreachable, keep clearing/replanning. Autonomy
+        // will spin-scan while there is no valid path.
         if (navigation_path_failed())
         {
-            enter_state(MISSION_STOPPED);
+            navigation_clear_goal();
         }
         // Enter idle state once mission is complete (at home)
         else if (navigation_goal_reached() && (get_current_color() == get_base_color()))
         {
+            recovery_failure_count = 0;
             enter_state(MISSION_COMPLETE);
         }
         break;
@@ -143,7 +203,10 @@ mission_state_t mission_get_state() { return state; }
 
 
 // Helper functions provide intent signals to naviagtion and autonomy without exposing transition logic.
-bool mission_should_explore() { return state == MISSION_EXPLORE; }
+bool mission_should_explore()
+{
+    return state == MISSION_EXPLORE || state == MISSION_RECOVERING;
+}
 
 bool mission_should_return_home() { return state == MISSION_RETURN_HOME; }
 
@@ -173,7 +236,7 @@ void mission_reset()
 // mission_task() consumes flags to keep transitions deterministic.
 void mission_report_weight_detected()
 {
-    if (state == MISSION_EXPLORE)
+    if (mission_should_explore())
     {
         weight_detected_event = true;
     }

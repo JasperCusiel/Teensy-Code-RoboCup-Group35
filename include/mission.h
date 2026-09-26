@@ -13,6 +13,7 @@ typedef enum
     MISSION_IDLE,
     MISSION_EXPLORE,
     MISSION_WEIGHT_DETECTED,
+    MISSION_RECOVERING,
     MISSION_RETURN_HOME,
     MISSION_COMPLETE,
     MISSION_STOPPED
@@ -27,7 +28,7 @@ void mission_task();
 // Returns mission FSM state
 mission_state_t mission_get_state();
 
-// Returns true if in EXPLORE state
+// Returns true if the mission is actively exploring or recovering exploration.
 bool mission_should_explore();
 
 // Returns true if in RETURN_HOME state.
