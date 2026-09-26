@@ -9,6 +9,7 @@
 
 // Create node for every point in map
 static astar_node_t nodes[MAP_WIDTH][MAP_HEIGHT];
+static path_t escape_path;
 
 namespace
 {
@@ -68,6 +69,28 @@ static uint16_t heuristic(const uint8_t x1, const uint8_t y1, const uint8_t x2, 
     return abs(x1 - x2) + abs(y1 - y2);
 }
 
+static void initialise_nodes()
+{
+    for (int8_t x = 0; x < MAP_WIDTH; x++)
+    {
+        for (int8_t y = 0; y < MAP_HEIGHT; y++)
+        {
+            nodes[x][y].x = x;
+            nodes[x][y].y = y;
+
+            nodes[x][y].g_cost = UINT16_MAX;
+            nodes[x][y].h_cost = UINT16_MAX;
+            nodes[x][y].f_cost = UINT16_MAX;
+
+            nodes[x][y].parent_x = -1;
+            nodes[x][y].parent_y = -1;
+
+            nodes[x][y].opened = false;
+            nodes[x][y].closed = false;
+        }
+    }
+}
+
 // Creates the actual path from
 static void make_path(uint8_t goal_x, uint8_t goal_y, path_t* path)
 {
@@ -106,9 +129,60 @@ static void make_path(uint8_t goal_x, uint8_t goal_y, path_t* path)
     }
 }
 
-bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* path)
+static bool find_escape_path(int start_x, int start_y, path_t* path)
 {
-    // Finds and constructs lowest cost path from start to goal. Returns true if valid path found, false if no valid path to goal.
+    // The robot may already be inside the inflated obstacle boundary when a
+    // nearby obstacle is first mapped. Search known-free cells without
+    // clearance until the nearest clearance-safe cell is reached. This path
+    // is used only as a prefix; normal A* clearance applies afterwards.
+    path->length = 0;
+    initialise_nodes();
+
+    astar_node_t* queue[MAP_WIDTH * MAP_HEIGHT];
+    int queue_head = 0;
+    int queue_tail = 0;
+
+    astar_node_t* start = &nodes[start_x][start_y];
+    start->parent_x = start_x;
+    start->parent_y = start_y;
+    start->opened = true;
+    queue[queue_tail++] = start;
+
+    while (queue_head < queue_tail)
+    {
+        astar_node_t* current = queue[queue_head++];
+        if (astar_has_obstacle_clearance(current->x, current->y))
+        {
+            make_path(current->x, current->y, path);
+            return true;
+        }
+
+        constexpr int8_t directions[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int i = 0; i < 4; ++i)
+        {
+            const int nx = current->x + directions[i][0];
+            const int ny = current->y + directions[i][1];
+            if (!in_map(nx, ny) || nodes[nx][ny].opened ||
+                map_get_state(nx, ny) != FREE)
+            {
+                continue;
+            }
+
+            astar_node_t* neighbor = &nodes[nx][ny];
+            neighbor->parent_x = current->x;
+            neighbor->parent_y = current->y;
+            neighbor->opened = true;
+            queue[queue_tail++] = neighbor;
+        }
+    }
+
+    return false;
+}
+
+static bool find_clearance_path(int start_x, int start_y,
+                                int goal_x, int goal_y, path_t* path)
+{
+    // Find a route whose intermediate cells all have obstacle clearance.
     path->length = 0;
 
     // Check both goal and start positions are valid map positions
@@ -118,25 +192,7 @@ bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* p
         return false;
     }
 
-    // Initialise map nodes
-    for (int8_t x = 0; x < MAP_WIDTH; x++)
-    {
-        for (int8_t y = 0; y < MAP_HEIGHT; y++)
-        {
-            nodes[x][y].x = x;
-            nodes[x][y].y = y;
-
-            nodes[x][y].g_cost = UINT16_MAX;
-            nodes[x][y].h_cost = UINT16_MAX;
-            nodes[x][y].f_cost = UINT16_MAX;
-
-            nodes[x][y].parent_x = -1;
-            nodes[x][y].parent_y = -1;
-
-            nodes[x][y].opened = false;
-            nodes[x][y].closed = false;
-        }
-    }
+    initialise_nodes();
 
     // List of discovered cells that haven't been processed
     astar_node_t* open_list[MAP_WIDTH * MAP_HEIGHT];
@@ -224,4 +280,60 @@ bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* p
     }
 
     return false;
+}
+
+bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* path)
+{
+    if (path == nullptr)
+    {
+        return false;
+    }
+    path->length = 0;
+
+    if (!in_map(start_x, start_y) || !in_map(goal_x, goal_y))
+    {
+        return false;
+    }
+
+    // Preserve the normal one-cell path even if the robot currently lacks
+    // inflated clearance.
+    if ((start_x == goal_x && start_y == goal_y) ||
+        astar_has_obstacle_clearance(start_x, start_y))
+    {
+        return find_clearance_path(start_x, start_y, goal_x, goal_y, path);
+    }
+
+    if (!find_escape_path(start_x, start_y, &escape_path) ||
+        escape_path.length == 0)
+    {
+        path->length = 0;
+        return false;
+    }
+
+    const grid_point_t escape_cell = escape_path.points[escape_path.length - 1];
+    if (!find_clearance_path(escape_cell.x, escape_cell.y,
+                             goal_x, goal_y, path))
+    {
+        return false;
+    }
+
+    const uint16_t prefix_length = escape_path.length - 1;
+    if (prefix_length + path->length > MAP_WIDTH * MAP_HEIGHT)
+    {
+        path->length = 0;
+        return false;
+    }
+
+    // Make room for the escape prefix. The final escape cell is already the
+    // first cell of the clearance-safe suffix, so do not duplicate it.
+    for (int i = static_cast<int>(path->length) - 1; i >= 0; --i)
+    {
+        path->points[i + prefix_length] = path->points[i];
+    }
+    for (uint16_t i = 0; i < prefix_length; ++i)
+    {
+        path->points[i] = escape_path.points[i];
+    }
+    path->length += prefix_length;
+    return true;
 }
