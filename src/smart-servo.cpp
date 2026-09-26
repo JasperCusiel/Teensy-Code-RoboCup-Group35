@@ -11,7 +11,7 @@
 #define SERIAL_BUS Serial2
 #define SERIAL_BAUD 115200 // max is 0.67 MBPS
 #define SERVO_ID_A 02
-#define SERVO_ID_B 03
+#define SERVO_ID_B 01
 
 
 //need to set these values
@@ -38,7 +38,8 @@ bool servo_down[] = {false, false}; // back, front
 bool servo_recovering[] = {false, false};
 uint32_t servo_reboot_time_ms[] = {0, 0};
 
-static bool read_servo_status(size_t servo_index, HerkulexStatusError &status_error, HerkulexStatusDetail &status_detail)
+static bool read_servo_status(size_t servo_index, HerkulexStatusError& status_error,
+                              HerkulexStatusDetail& status_detail)
 {
     HerkulexPacket resp;
     if (!herkulex_bus.sendPacketAndReadResponse(resp, servo_id[servo_index], HerkulexCommand::Stat))
@@ -48,6 +49,9 @@ static bool read_servo_status(size_t servo_index, HerkulexStatusError &status_er
 
     status_error = static_cast<HerkulexStatusError>(resp.data[0]);
     status_detail = static_cast<HerkulexStatusDetail>(resp.data[1]);
+    // Serial.printf("status: %d\n", status_error);
+    // Serial.printf("detail: %d\n", status_detail);
+
     return true;
 }
 
