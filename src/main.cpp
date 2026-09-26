@@ -82,13 +82,22 @@ void setup()
     }
 
     Serial.println("Push GO BTN to start");
-    // Wait for GO button to be pushed to start program
     pinMode(GO_BTN, INPUT);
 
+    // Wait for a press.
+    while (!read_button(GO_BTN))
+    {
+        delay(1);
+    }
+
+    // Wait for release before starting.
     while (read_button(GO_BTN))
     {
         delay(1);
     }
+
+    display_set_page(PAGE_8X8_TOF);
+    Serial.println("Start");
     display_set_page(PAGE_8X8_TOF);
     Serial.println("Start");
     mission_start();
