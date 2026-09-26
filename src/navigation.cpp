@@ -22,7 +22,6 @@ namespace
     constexpr float kCoverageGoalToleranceM = 0.25f;
     constexpr float kPi = 3.14159265f;
     constexpr float kNoFrontierScanAngleBeforeCompleteRad = 2.5f * kPi;
-    constexpr uint8_t kNoFrontierScanCyclesBeforeComplete = 40;
     constexpr uint8_t kRejectedFrontierCount = 8;
     constexpr uint8_t kRejectedFrontierRadiusCells = 3;
     constexpr uint8_t kPathValidationSkipCells = 2;
@@ -40,7 +39,6 @@ namespace
     float no_frontier_scan_angle_rad = 0.0f;
     float last_no_frontier_heading_rad = 0.0f;
     bool no_frontier_scan_started = false;
-    uint8_t no_frontier_scan_cycles = 0;
     frontier_goal_t rejected_frontiers[kRejectedFrontierCount] = {};
     uint8_t rejected_frontier_count = 0;
     uint8_t next_rejected_frontier = 0;
@@ -69,7 +67,6 @@ namespace
         no_frontier_scan_angle_rad = 0.0f;
         last_no_frontier_heading_rad = 0.0f;
         no_frontier_scan_started = false;
-        no_frontier_scan_cycles = 0;
     }
 
     void reset_replan_budget()
@@ -85,11 +82,6 @@ namespace
 
     bool no_frontier_scan_complete(float heading)
     {
-        if (no_frontier_scan_cycles < kNoFrontierScanCyclesBeforeComplete)
-        {
-            ++no_frontier_scan_cycles;
-        }
-
         if (!no_frontier_scan_started)
         {
             last_no_frontier_heading_rad = heading;
@@ -100,8 +92,7 @@ namespace
         no_frontier_scan_angle_rad += fabsf(wrap_angle(heading - last_no_frontier_heading_rad));
         last_no_frontier_heading_rad = heading;
 
-        return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad ||
-            no_frontier_scan_cycles >= kNoFrontierScanCyclesBeforeComplete;
+        return no_frontier_scan_angle_rad >= kNoFrontierScanAngleBeforeCompleteRad;
     }
 
     // Converts a map cell index to world space coordinate of that cell's center.
@@ -163,7 +154,12 @@ namespace
             active_goal = {NAV_GOAL_NONE, {0, 0}};
             active_path.length = 0;
             reset_replan_budget();
-            status = NAV_STATUS_EXPLORATION_COMPLETE;
+            // An unavailable coverage target may become usable as the scan
+            // adds map evidence. Only report completion after every coverage
+            // goal has actually been advanced or rejected.
+            status = coverage_planner_complete()
+                         ? NAV_STATUS_EXPLORATION_COMPLETE
+                         : NAV_STATUS_IDLE;
             return false;
         }
 
