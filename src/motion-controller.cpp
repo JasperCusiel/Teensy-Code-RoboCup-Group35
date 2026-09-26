@@ -17,7 +17,7 @@ namespace
     float override_heading = 0.0f;
     // Robot and PID config
     constexpr float kTrackWidthM = 0.28f;
-    constexpr float kMaxWheelSpeedMps = 0.50f;
+    constexpr float kMaxWheelSpeedMps = kDrivetrainMaxWheelSpeedMps;
     constexpr float kHeadingKp = 4.00f;
     constexpr float kHeadingKi = 0.00f;
     constexpr float kHeadingKd = 0.00f;
@@ -64,7 +64,7 @@ namespace
 
     float max_heading_correction_for_speed(float linear_speed)
     {
-        return kMaxHeadingCorrectionRadPerSec;
+        // return kMaxHeadingCorrectionRadPerSec;
         const float usable_speed =
             fmaxf(0.0f, fabsf(linear_speed) - kMinWheelSpeedDuringHeadingCorrectionMps);
         return fminf(kMaxHeadingCorrectionRadPerSec,
@@ -81,6 +81,29 @@ namespace
     {
         heading_integral = 0.0f;
         heading_previous_error = 0.0f;
+    }
+
+    void fit_wheel_targets_to_drive_limits(float* left_speed, float* right_speed)
+    {
+        float linear_speed = 0.5f * (*left_speed + *right_speed);
+        float differential_speed = 0.5f * (*right_speed - *left_speed);
+        const float abs_differential_speed = fabsf(differential_speed);
+
+        if (abs_differential_speed >= kMaxWheelSpeedMps)
+        {
+            differential_speed = differential_speed > 0.0f
+                                     ? kMaxWheelSpeedMps
+                                     : -kMaxWheelSpeedMps;
+            linear_speed = 0.0f;
+        }
+        else
+        {
+            const float linear_limit = kMaxWheelSpeedMps - abs_differential_speed;
+            linear_speed = clamp_value(linear_speed, -linear_limit, linear_limit);
+        }
+
+        *left_speed = linear_speed - differential_speed;
+        *right_speed = linear_speed + differential_speed;
     }
 } // namespace
 
@@ -165,9 +188,9 @@ float heading_pid_update(float target_heading, float current_heading, float dt)
 
 void motion_controller_set_wheel_targets(float left_speed, float right_speed)
 {
-    // Clamp values between max and min wheel speeds.
-    left_target = clamp_value(left_speed, -kMaxWheelSpeedMps, kMaxWheelSpeedMps);
-    right_target = clamp_value(right_speed, -kMaxWheelSpeedMps, kMaxWheelSpeedMps);
+    fit_wheel_targets_to_drive_limits(&left_speed, &right_speed);
+    left_target = left_speed;
+    right_target = right_speed;
 }
 
 
