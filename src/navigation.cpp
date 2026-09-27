@@ -174,6 +174,17 @@ namespace
         return true;
     }
 
+    void start_coverage()
+    {
+        active_goal = {NAV_GOAL_NONE, {0, 0}};
+        active_path.length = 0;
+        replan_requested = false;
+        reset_replan_budget();
+        reset_no_frontier_scan();
+        status = NAV_STATUS_IDLE;
+        coverage_planner_start();
+    }
+
     bool plan_from(const grid_point_t& start)
     {
         status = NAV_STATUS_PLANNING;
@@ -428,6 +439,15 @@ void navigation_task()
         }
     }
 
+    // Frontier discovery is useful early in the round, but must not consume
+    // the full two-minute run. Move to deterministic lawnmower coverage after
+    // the initial exploration window, even if a frontier is still active.
+    if (mission_should_explore() && !coverage_planner_started() &&
+        mission_should_use_coverage())
+    {
+        start_coverage();
+    }
+
     // Refresh exploration goals once the robot has made progress along
     // the current path, new map data can make a different frontier better.
     if (mission_should_explore() &&
@@ -450,8 +470,7 @@ void navigation_task()
             {
                 if (status == NAV_STATUS_EXPLORATION_COMPLETE)
                 {
-                    coverage_planner_start();
-                    reset_no_frontier_scan();
+                    start_coverage();
                 }
                 else
                 {
