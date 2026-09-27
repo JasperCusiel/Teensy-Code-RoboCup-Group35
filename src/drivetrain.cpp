@@ -27,8 +27,8 @@ namespace
         float kSForward, kSReverse, kVForward, kVReverse, kP, kI;
     };
 
-    constexpr Tuning kLeftTuning = {0.0f, 0.0f, 850.0f, 850.0f, 250.0f, 500.0f};
-    constexpr Tuning kRightTuning = {0.0f, 0.0f, 850.0f, 850.0f, 250.0f, 500.0f};
+    constexpr Tuning kLeftTuning = {0.0f, 0.0f, 850.0f, 850.0f, 350.0f, 500.0f};
+    constexpr Tuning kRightTuning = {0.0f, 0.0f, 850.0f, 850.0f, 450.0f, 500.0f};
     constexpr float kAccelerationMps2 = 0.40f;
     constexpr float kDecelerationMps2 = 0.60f;
     constexpr float kPwmSlewPerSec = 1000.0f;
@@ -192,18 +192,38 @@ void drivetrain_clear_fault()
 
 DrivetrainFault drivetrain_get_fault() { return fault; }
 
+// void drivetrain_debug_task()
+// {
+//     DrivetrainTelemetry t;
+//     drivetrain_get_telemetry(&t);
+//
+//     Serial.printf(
+//         "L ref=%.3f vel=%.3f pwm=%d | R ref=%.3f vel=%.3f pwm=%d | dt=%lu max=%lu fault=%u\n",
+//         t.left_ramped_mps, t.left_measured_mps, (int)t.left_pwm,
+//         t.right_ramped_mps, t.right_measured_mps, (int)t.right_pwm,
+//         (unsigned long)t.last_interval_us,
+//         (unsigned long)t.max_interval_us,
+//         (unsigned)t.fault);
+// }
 void drivetrain_debug_task()
 {
-    DrivetrainTelemetry t;
-    drivetrain_get_telemetry(&t);
-
     Serial.printf(
-        "L ref=%.3f vel=%.3f pwm=%d | R ref=%.3f vel=%.3f pwm=%d | dt=%lu max=%lu fault=%u\n",
-        t.left_ramped_mps, t.left_measured_mps, (int)t.left_pwm,
-        t.right_ramped_mps, t.right_measured_mps, (int)t.right_pwm,
-        (unsigned long)t.last_interval_us,
-        (unsigned long)t.max_interval_us,
-        (unsigned)t.fault);
+        "DRIVE L req=%.3f ref=%.3f vel=%.3f pwm=%.0f rev=%u | "
+        "R req=%.3f ref=%.3f vel=%.3f pwm=%.0f rev=%u | "
+        "fault=%u dt=%lu max=%lu\n",
+        left.requested,
+        left.reference,
+        left.measured,
+        left.output,
+        left.reversing ? 1u : 0u,
+        right.requested,
+        right.reference,
+        right.measured,
+        right.output,
+        right.reversing ? 1u : 0u,
+        static_cast<unsigned>(fault),
+        static_cast<unsigned long>(last_interval_us),
+        static_cast<unsigned long>(max_interval_us));
 }
 
 void set_open_loop_wheel_speed_targets(float l, float r)

@@ -35,7 +35,7 @@
 
 // PID tuning values
 #define SERVO_KP 0.03 //was 0.1
-#define SERVO_KI 0 //was 0.1
+#define SERVO_KI 0.01 //was 0.1
 #define SERVO_KD 0 //was 0.05
 
 #define LIFTER_UP_POS   (-26000)
