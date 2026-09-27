@@ -14,6 +14,7 @@
 namespace
 {
     bool override_active = false;
+    MotionOverrideOwner override_owner = MotionOverrideOwner::NONE;
     float override_heading = 0.0f;
     // Robot and PID config
     constexpr float kTrackWidthM = 0.28f;
@@ -85,25 +86,16 @@ namespace
 
     void fit_wheel_targets_to_drive_limits(float* left_speed, float* right_speed)
     {
-        float linear_speed = 0.5f * (*left_speed + *right_speed);
-        float differential_speed = 0.5f * (*right_speed - *left_speed);
-        const float abs_differential_speed = fabsf(differential_speed);
+        const float largest_speed = fmaxf(fabsf(*left_speed), fabsf(*right_speed));
 
-        if (abs_differential_speed >= kMaxWheelSpeedMps)
+        if (largest_speed > kMaxWheelSpeedMps)
         {
-            differential_speed = differential_speed > 0.0f
-                                     ? kMaxWheelSpeedMps
-                                     : -kMaxWheelSpeedMps;
-            linear_speed = 0.0f;
-        }
-        else
-        {
-            const float linear_limit = kMaxWheelSpeedMps - abs_differential_speed;
-            linear_speed = clamp_value(linear_speed, -linear_limit, linear_limit);
-        }
+            const float scale =
+                kMaxWheelSpeedMps / largest_speed;
 
-        *left_speed = linear_speed - differential_speed;
-        *right_speed = linear_speed + differential_speed;
+            *left_speed *= scale;
+            *right_speed *= scale;
+        }
     }
 } // namespace
 
@@ -111,6 +103,8 @@ void motion_controller_init()
 {
     // Initialize motion controller.
     enabled = true;
+    override_owner = MotionOverrideOwner::NONE;
+    override_active = false;
     previous_update_us = micros();
     reset_pid();
     motion_controller_stop();
@@ -127,40 +121,36 @@ void motion_controller_stop()
 
 void motion_controller_update(const pose_t* pose, const velocity_command_t* command)
 {
-    // Updates the commanded wheel speeds based on the commanded linear velocity and heading.
-    if (override_active) return; // pickup owns the wheels
+    if (override_active)
+    {
+        return; // Pickup currently owns the wheels.
+    }
 
-    const float dt = take_dt();
-
-    if (!enabled || pose == nullptr || command == nullptr || command->stop)
+    if (!enabled ||
+        pose == nullptr ||
+        command == nullptr ||
+        command->stop)
     {
         motion_controller_stop();
         return;
     }
 
-    float turn_rate = command->turn_rate;
-    if (is_direct_turn_rate_command(command))
+    if (!isfinite(command->linear_speed) ||
+        !isfinite(command->turn_rate))
     {
-        reset_pid();
-    }
-    else
-    {
-        const float heading_correction_limit =
-            max_heading_correction_for_speed(command->linear_speed);
-        const float heading_correction = clamp_value(
-            heading_pid_update(command->heading, pose->theta, dt),
-            -heading_correction_limit,
-            heading_correction_limit);
-        turn_rate += heading_correction;
+        motion_controller_stop();
+        return;
     }
 
-    turn_rate = clamp_value(turn_rate, -kMaxTurnRateRadPerSec, kMaxTurnRateRadPerSec);
+    // Navigation already generated the required angular velocity.
+    // Do not add another correction for the same heading error.
+    const float turn_rate = clamp_value(command->turn_rate, -kMaxTurnRateRadPerSec, kMaxTurnRateRadPerSec);
 
-    // Convert heading and speed to target wheel speeds.
-    motion_controller_set_wheel_targets(command->linear_speed - 0.5f * kTrackWidthM * turn_rate,
-                                        command->linear_speed + 0.5f * kTrackWidthM * turn_rate);
+    const float left_speed = command->linear_speed - 0.5f * kTrackWidthM * turn_rate;
 
-    // Output to motor controller.
+    const float right_speed = command->linear_speed + 0.5f * kTrackWidthM * turn_rate;
+
+    motion_controller_set_wheel_targets(left_speed, right_speed);
 
     set_open_loop_wheel_speed_targets(left_target, right_target);
 }
@@ -201,19 +191,72 @@ void motion_controller_get_outputs(float* left, float* right)
     if (right != nullptr) *right = right_target;
 }
 
+bool motion_controller_acquire_override(MotionOverrideOwner owner)
+{
+    if (!enabled || owner == MotionOverrideOwner::NONE)
+    {
+        return false;
+    }
+
+    if (override_owner == owner)
+    {
+        return true; // Already ours; do not reset the controller each call.
+    }
+
+    if (override_owner != MotionOverrideOwner::NONE)
+    {
+        return false;
+    }
+
+    float x, y, heading;
+    get_ekf_pose(&x, &y, &heading);
+    if (!isfinite(heading))
+    {
+        return false;
+    }
+
+    motion_controller_stop();
+    override_owner = owner;
+    override_active = true;
+    override_heading = heading;
+    previous_update_us = micros();
+    return true;
+}
+
+void motion_controller_release_override(MotionOverrideOwner owner)
+{
+    if (owner == MotionOverrideOwner::NONE || override_owner != owner)
+    {
+        return;
+    }
+
+    motion_controller_stop();
+    override_owner = MotionOverrideOwner::NONE;
+    override_active = false;
+}
+
 void motion_controller_set_override(bool active)
 {
-    if (active == override_active) return;
-    override_active = active;
-    reset_pid();
-    motion_controller_stop(); // always start and end from a clean stop
-
+    // Backward-compatible wrapper for the existing pickup state machine.
     if (active)
     {
-        float x, y, theta;
-        get_ekf_pose(&x, &y, &theta);
-        override_heading = theta; // hold the heading we were facing
+        (void)motion_controller_acquire_override(MotionOverrideOwner::PICKUP);
     }
+    else
+    {
+        motion_controller_release_override(MotionOverrideOwner::PICKUP);
+    }
+}
+
+void motion_controller_set_override_heading(float heading)
+{
+    if (!override_active || !isfinite(heading))
+    {
+        return;
+    }
+
+    override_heading = wrap_angle_rad(heading);
+    reset_pid();
 }
 
 void motion_controller_override_drive(float speed_mps, float turn_rate_rad_s)

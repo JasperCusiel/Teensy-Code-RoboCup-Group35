@@ -33,4 +33,15 @@ void motion_controller_get_outputs(float* left_mps, float* right_mps);
 void motion_controller_set_override(bool active);
 void motion_controller_override_drive(float speed_mps, float turn_rate_rad_s);
 
+enum class MotionOverrideOwner
+{
+    NONE,
+    PICKUP,
+    DROPOFF
+};
+
+bool motion_controller_acquire_override(MotionOverrideOwner owner);
+void motion_controller_release_override(MotionOverrideOwner owner);
+void motion_controller_set_override_heading(float heading);
+
 #endif // ROBOCUP_MOTION_CONTROLLER_H
