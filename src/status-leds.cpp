@@ -6,6 +6,7 @@
 #include <FastLED.h>
 
 #include "navigation.h"
+#include "coverage-planner.h"
 
 #define STATUS_LED_DATA_PIN A12
 
@@ -18,6 +19,7 @@ namespace
 
     CRGB leds[kTotalLedCount];
     mission_state_t last_state = MISSION_IDLE;
+    bool last_coverage_started = false;
     bool initialized = false;
 
     CRGB mission_color(mission_state_t state)
@@ -27,7 +29,7 @@ namespace
         case MISSION_IDLE:
             return CRGB::White;
         case MISSION_EXPLORE:
-            if (navigation_get_goal().type == NAV_GOAL_COVERAGE)
+            if (coverage_planner_started())
             {
                 return CRGB::Purple;
             }
@@ -64,6 +66,7 @@ void status_leds_init()
     FastLED.setBrightness(kBrightness);
 
     last_state = mission_get_state();
+    last_coverage_started = coverage_planner_started();
     render_mission_status(last_state);
     FastLED.show();
     initialized = true;
@@ -77,12 +80,14 @@ void status_leds_task()
     }
 
     const mission_state_t state = mission_get_state();
-    if (state == last_state)
+    const bool coverage_started = coverage_planner_started();
+    if (state == last_state && coverage_started == last_coverage_started)
     {
         return;
     }
 
     last_state = state;
+    last_coverage_started = coverage_started;
     render_mission_status(state);
     FastLED.show();
 }
