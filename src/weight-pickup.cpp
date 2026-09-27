@@ -24,6 +24,7 @@
 #define END_STOP_A_PIN 0
 #define END_STOP_B_PIN 1
 #define SEARCHING_TIMEOUT_MS 3000
+#define IR_REARM_CLEAR_DELAY_MS 750
 #define LOST 0
 #define LEFT 1
 #define CENTRE 2
@@ -36,6 +37,9 @@ static unsigned long aligning_start_time = 0;
 static unsigned long fake_weight_clear_start = 0;
 static unsigned long loading_confirm_start = 0;
 static unsigned long last_weight_seen_time = 0;
+static unsigned long ir_clear_start_time = 0;
+static bool ir_pickup_armed = true;
+static bool ir_clear_timer_started = false;
 
 
 void weight_pickup_state_update()
@@ -63,13 +67,31 @@ void weight_pickup_state_update()
             current_state = PICKUP_STATUS_ALIGNING;
             break;
         }
-        if (is_weight_detected_ir_reflective())
+
+        if (!is_weight_detected_ir_reflective())
         {
-            if (is_lifter_reached_target() && mission_should_explore())
+            if (!ir_clear_timer_started)
             {
-                mission_report_pickup_complete(true);
-                motion_controller_override_drive(0.0f, 0.0f);
-                current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
+                ir_clear_start_time = millis();
+                ir_clear_timer_started = true;
+            }
+            else if (millis() - ir_clear_start_time >=
+                IR_REARM_CLEAR_DELAY_MS)
+            {
+                ir_pickup_armed = true;
+            }
+        }
+        else
+        {
+            ir_clear_timer_started = false;
+
+            // Catch weights reached accidentally while navigating. Disarm
+            // until the sensor has been clear long enough so a carried weight
+            // cannot repeatedly start the pickup sequence.
+            if (ir_pickup_armed && mission_should_explore())
+            {
+                ir_pickup_armed = false;
+                mission_report_weight_detected();
             }
         }
         break;
