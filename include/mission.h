@@ -31,6 +31,9 @@ mission_state_t mission_get_state();
 // Returns true if the mission is actively exploring or recovering exploration.
 bool mission_should_explore();
 
+// Returns true once the initial frontier-exploration window has elapsed.
+bool mission_should_use_coverage();
+
 // Returns true if in RETURN_HOME state.
 bool mission_should_return_home();
 

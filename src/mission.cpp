@@ -6,6 +6,7 @@
 #include "button.h"
 #include "navigation.h"
 #include "colour-sensor.h"
+#include <Arduino.h>
 
 // Mission module handles the mission logic via FSM to
 // determine the robots behavior -> IDLE, EXPLORE, WEIGHT_DETECTED, RETURN_HOME, etc.
@@ -15,6 +16,7 @@ namespace
     // Functions and variables private to module.
     constexpr uint8_t kTargetWeightCount = 3; // Number of weights to collect before returning home
     constexpr uint8_t kRecoveryFailuresBeforeReturnHome = 3;
+    constexpr uint32_t kFrontierExplorationDurationMs = 35000;
 
     mission_state_t state = MISSION_IDLE; //MISSION IDLE
     uint8_t collected_weight_count = 0;
@@ -24,6 +26,8 @@ namespace
     bool pickup_succeeded = false;
     bool dropoff_succeeded = false;
     bool dropoff_complete_event = false;
+    uint32_t mission_started_ms = 0;
+    bool mission_started = false;
 
     void enter_state(mission_state_t new_state)
     {
@@ -83,6 +87,8 @@ void mission_init()
     pickup_succeeded = false;
     dropoff_complete_event = false;
     dropoff_succeeded = false;
+    mission_started_ms = 0;
+    mission_started = false;
 }
 
 void mission_task()
@@ -208,6 +214,13 @@ bool mission_should_explore()
     return state == MISSION_EXPLORE || state == MISSION_RECOVERING;
 }
 
+bool mission_should_use_coverage()
+{
+    return mission_started &&
+        static_cast<uint32_t>(millis() - mission_started_ms) >=
+            kFrontierExplorationDurationMs;
+}
+
 bool mission_should_return_home() { return state == MISSION_RETURN_HOME; }
 
 bool mission_should_stop()
@@ -220,6 +233,8 @@ void mission_start()
 {
     if (state == MISSION_IDLE)
     {
+        mission_started_ms = millis();
+        mission_started = true;
         enter_state(MISSION_EXPLORE);
     }
 }
