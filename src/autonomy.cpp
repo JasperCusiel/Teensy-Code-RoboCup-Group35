@@ -10,6 +10,7 @@
 #include "vfh.h"
 #include "weight-pickup.h"
 #include "odometry.h"
+#include "drivetrain.h"
 #include <math.h>
 #include "math_utils.h"
 #include <Arduino.h>
@@ -24,7 +25,7 @@ namespace // Keep variables and helper functions private to this file.
     constexpr float kTurnInPlaceSpeedScale = 0.750f;
     constexpr float kSlowFrontClearanceM = 0.35f;
     constexpr float kHardFrontClearanceM = 0.08f;
-    constexpr float kExplorationScanTurnRateRadPerSec = 1.0f;
+    constexpr float kExplorationScanTurnRateRadPerSec = 0.5f;
     constexpr float kWeightApproachSpeedMps = 0.08f;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
     constexpr float kTurnInPlaceLinearDeadbandMps = 0.01f;
@@ -34,6 +35,10 @@ namespace // Keep variables and helper functions private to this file.
     constexpr uint8_t kAvoidanceReplanCooldownCycles = 20;
     constexpr bool kHeadingHoldTestMode = false;
     constexpr float kHeadingHoldTestSpeedMps = 0.1f;
+    float scan_start_x = 0.0f;
+    float scan_start_y = 0.0f;
+
+    constexpr float kScanResetDistanceM = 0.10f;
 
     // Virtual target distance used when following a VFH-selected bearing.
     // Start with the same distance as the pure-pursuit lookahead.
@@ -52,6 +57,124 @@ namespace // Keep variables and helper functions private to this file.
     bool heading_hold_test_started = false;
     float heading_hold_test_heading = 0.0f;
 
+    constexpr float kScanTurnRateRadPerSec = 0.50f;
+    constexpr uint32_t kScanTimeoutMs = 30000;
+    constexpr float kScanReverseSpeedMps = -0.15f;
+    constexpr float kReverseMotionThresholdMps = 0.01f;
+    constexpr uint8_t kReverseMotionConfirmations = 2;
+    constexpr float kReverseRecoveryDistanceM = 0.30f;
+    constexpr uint32_t kReverseRetryPauseMs = 500;
+    uint32_t reverse_retry_started_ms = 0;
+    uint32_t last_motion_debug_ms = 0;
+
+    bool scan_active = false;
+    uint32_t scan_started_ms = 0;
+    float scan_direction = 1.0f;
+    bool reverse_recovery_active = false;
+    bool reverse_retry_pending = false;
+    bool reverse_motion_confirmed = false;
+    uint8_t reverse_motion_confirmations = 0;
+
+    void reset_scan()
+    {
+        scan_active = false;
+        reverse_recovery_active = false;
+        reverse_retry_pending = false;
+        reverse_motion_confirmed = false;
+        reverse_motion_confirmations = 0;
+    }
+
+    void begin_reverse_recovery(const pose_t& pose)
+    {
+        scan_active = true;
+        scan_start_x = pose.x;
+        scan_start_y = pose.y;
+        reverse_recovery_active = true;
+        reverse_retry_pending = false;
+        reverse_motion_confirmed = false;
+        reverse_motion_confirmations = 0;
+    }
+
+    bool reverse_motion_detected()
+    {
+        DrivetrainTelemetry telemetry = {};
+        drivetrain_get_telemetry(&telemetry);
+
+        return telemetry.fault == DrivetrainFault::NONE &&
+            telemetry.left_measured_mps <= -kReverseMotionThresholdMps &&
+            telemetry.right_measured_mps <= -kReverseMotionThresholdMps;
+    }
+
+    velocity_command_t bounded_scan_command(const pose_t& pose)
+    {
+        if (!scan_active)
+        {
+            scan_active = true;
+            scan_started_ms = millis();
+
+            scan_start_x = pose.x;
+            scan_start_y = pose.y;
+
+            scan_direction = last_steering_direction >= 0.0f
+                                 ? 1.0f
+                                 : -1.0f;
+        }
+
+        if (reverse_recovery_active)
+        {
+            if (!reverse_motion_confirmed && reverse_motion_detected())
+            {
+                if (reverse_motion_confirmations < kReverseMotionConfirmations)
+                {
+                    ++reverse_motion_confirmations;
+                }
+            }
+            else if (!reverse_motion_confirmed)
+            {
+                reverse_motion_confirmations = 0;
+            }
+
+            if (!reverse_motion_confirmed &&
+                reverse_motion_confirmations >= kReverseMotionConfirmations)
+            {
+                reverse_motion_confirmed = true;
+                Serial.println(
+                    "RECOVERY: reverse motion detected; continuing 0.30 m");
+            }
+
+            const float reverse_dx = pose.x - scan_start_x;
+            const float reverse_dy = pose.y - scan_start_y;
+            if (reverse_motion_confirmed &&
+                reverse_dx * reverse_dx + reverse_dy * reverse_dy >=
+                kReverseRecoveryDistanceM * kReverseRecoveryDistanceM)
+            {
+                reset_scan();
+                navigation_request_replan();
+                Serial.println("RECOVERY: reverse distance reached; replanning");
+                return {pose.theta, 0.0f, 0.0f, true};
+            }
+
+            return {pose.theta, kScanReverseSpeedMps, 0.0f, false};
+        }
+
+        if (static_cast<uint32_t>(millis() - scan_started_ms) >=
+            kScanTimeoutMs)
+        {
+            begin_reverse_recovery(pose);
+
+            Serial.println("RECOVERY: scan timed out; reversing");
+
+            return {pose.theta, kScanReverseSpeedMps, 0.0f, false};
+        }
+
+        return {
+            pose.theta,
+            0.0f,
+            scan_direction * kScanTurnRateRadPerSec,
+            false
+        };
+    }
+
     void reset_recovery_turn_tracking()
     {
         recovery_turn_angle_rad = 0.0f;
@@ -59,24 +182,6 @@ namespace // Keep variables and helper functions private to this file.
         recovery_turn_started = false;
     }
 
-    void record_recovery_turn(float heading)
-    {
-        if (!recovery_turn_started)
-        {
-            recovery_last_heading_rad = heading;
-            recovery_turn_started = true;
-            return;
-        }
-
-        recovery_turn_angle_rad += fabsf(wrap_angle_rad(heading - recovery_last_heading_rad));
-        recovery_last_heading_rad = heading;
-
-        if (recovery_turn_angle_rad >= kRecoveryRejectAngleRad)
-        {
-            navigation_reject_current_goal();
-            reset_recovery_turn_tracking();
-        }
-    }
 
     void reset_avoidance_replan_tracking()
     {
@@ -149,45 +254,17 @@ namespace // Keep variables and helper functions private to this file.
         // No free direction if steering vfh direction is NAN
         if (!isfinite(steering_relative))
         {
-            // Keep rotating the same way so recovery does not oscillate left/right.
-            const float recovery_direction = last_steering_direction;
             update_avoidance_replan_tracking(true);
-            record_recovery_turn(pose.theta);
-            return {
-                wrap_angle_rad(pose.theta + recovery_direction * kRecoveryHeadingOffsetRad),
-                0.0f,
-                (recovery_direction * kObstacleTurnRateRadPerSec),
-                false
-            };
+            return bounded_scan_command(pose);
         }
 
         if (is_turn_in_place_command(target))
         {
-            const bool exit_recovery =
-                following_path &&
-                recovery_turn_started &&
-                forward_clearance > kHardFrontClearanceM;
-            reset_recovery_turn_tracking();
             reset_avoidance_replan_tracking();
-            last_steering_direction = target.turn_rate > 0.0f ? 1.0f : -1.0f;
-            if (exit_recovery)
-            {
-                float speed = kRecoveryExitSpeedMps;
-                if (forward_clearance < kSlowFrontClearanceM)
-                {
-                    const float clearance_scale =
-                        (forward_clearance - kHardFrontClearanceM) /
-                        (kSlowFrontClearanceM - kHardFrontClearanceM);
-                    speed *= fminf(1.0f, fmaxf(0.0f, clearance_scale));
-                }
 
-                return {
-                    wrap_angle_rad(pose.theta + steering_relative),
-                    speed,
-                    0.0f,
-                    false
-                };
-            }
+            last_steering_direction =
+                target.turn_rate > 0.0f ? 1.0f : -1.0f;
+
             return target;
         }
 
@@ -223,13 +300,7 @@ namespace // Keep variables and helper functions private to this file.
         if (speed_scale <= kTurnInPlaceSpeedScale ||
             forward_clearance <= kHardFrontClearanceM)
         {
-            const float turn_direction =
-                fabsf(steering_relative) > kSteeringDirectionDeadbandRad
-                    ? (steering_relative > 0.0f ? 1.0f : -1.0f)
-                    : last_steering_direction;
-            safe.linear_speed = 0.0f;
-            safe.turn_rate = turn_direction * kObstacleTurnRateRadPerSec;
-            record_recovery_turn(pose.theta);
+            return bounded_scan_command(pose);
         }
         else
         {
@@ -265,15 +336,6 @@ namespace // Keep variables and helper functions private to this file.
         return safe;
     }
 
-    velocity_command_t exploration_scan_command(const pose_t& pose)
-    {
-        return {
-            pose.theta,
-            0.0f,
-            last_steering_direction * kExplorationScanTurnRateRadPerSec,
-            false
-        };
-    }
 
     velocity_command_t heading_hold_test_command(const pose_t& pose)
     {
@@ -305,6 +367,7 @@ void autonomy_init()
     heading_hold_test_started = false;
     // Publish stop command until first planning cycle produces a safe motion command.
     safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+    reset_scan();
 }
 
 void autonomy_task()
@@ -318,17 +381,80 @@ void autonomy_task()
     // Advance the mission state
     mission_task();
 
-    if (!check_navigation_progress(current_pose))
+    const DrivetrainFault drivetrain_fault = drivetrain_get_fault();
+    const bool recoverable_stall =
+        drivetrain_fault == DrivetrainFault::LEFT_STALLED ||
+        drivetrain_fault == DrivetrainFault::RIGHT_STALLED;
+    const bool mission_allows_recovery =
+        mission_should_explore() || mission_should_return_home();
+
+    // A latched stall zeros and rejects every wheel command. Clear it while
+    // stopped, then immediately replace the failed command with reverse.
+    if (recoverable_stall && mission_allows_recovery &&
+        !reverse_recovery_active)
     {
+        if (reverse_retry_pending &&
+            static_cast<uint32_t>(millis() - reverse_retry_started_ms) <
+            kReverseRetryPauseMs)
+        {
+            safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+            return;
+        }
+
+        const bool retrying = reverse_retry_pending;
+        motion_controller_stop();
+        drivetrain_clear_fault();
+        begin_reverse_recovery(current_pose);
         safe_command = {
             current_pose.theta,
+            kScanReverseSpeedMps,
             0.0f,
-            0.0f,
-            true
+            false
         };
-
+        Serial.println(retrying
+                           ? "RECOVERY: retrying reverse after stall"
+                           : "RECOVERY: drivetrain stall cleared; reversing");
         return;
     }
+
+    // If reverse itself stalls, pause at neutral before clearing the stall and
+    // trying again. Competition operation must not require physical access.
+    if (reverse_recovery_active &&
+        drivetrain_fault != DrivetrainFault::NONE)
+    {
+        reverse_recovery_active = false;
+        safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+        if (recoverable_stall && mission_allows_recovery)
+        {
+            reverse_retry_pending = true;
+            reverse_retry_started_ms = millis();
+            Serial.println("RECOVERY: reverse stalled; pausing before retry");
+        }
+        else
+        {
+            reverse_retry_pending = false;
+            Serial.println("RECOVERY: reverse hit a non-recoverable drive fault");
+        }
+        return;
+    }
+
+    if (drivetrain_fault != DrivetrainFault::NONE)
+    {
+        safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+        return;
+    }
+
+    // if (!check_navigation_progress(current_pose))
+    // {
+    //     safe_command = {
+    //         current_pose.theta,
+    //         0.0f,
+    //         0.0f,
+    //         true
+    //     };
+    //
+    //     return;
+    // }
 
     if (kHeadingHoldTestMode)
     {
@@ -343,41 +469,93 @@ void autonomy_task()
 
     if (mission_get_state() == MISSION_WEIGHT_DETECTED)
     {
-        //safe_command = should_drive_towards_weight()
-        //? weight_approach_command(current_pose)
-        //: velocity_command_t{current_pose.theta, 0.0f, 0.0f, true};
+        safe_command = {
+            current_pose.theta,
+            0.0f,
+            0.0f,
+            true
+        };
+        reset_scan();
         return;
     }
 
     // Get heading and forward speed from pure pursuit
     const path_t* path = navigation_get_path();
-    const velocity_command_t target =
-        (mission_should_explore() || mission_should_return_home()) && path == nullptr
-            ? exploration_scan_command(current_pose)
-            : pure_pursuit_update(path, &current_pose);
-    // Pass through VFH obstacle avoidance
-    safe_command = avoid_obstacles(target, current_pose, path != nullptr);
-    // static uint32_t last_motion_debug_ms = 0;
-    //
-    // if (static_cast<uint32_t>(
-    //     millis() - last_motion_debug_ms) >= 500)
-    // {
-    //     last_motion_debug_ms = millis();
-    //
-    //     Serial.printf(
-    //         "CMD PP: stop=%u v=%.3f w=%.3f | "
-    //         "SAFE: stop=%u v=%.3f w=%.3f\n",
-    //         target.stop ? 1u : 0u,
-    //         target.linear_speed,
-    //         target.turn_rate,
-    //         safe_command.stop ? 1u : 0u,
-    //         safe_command.linear_speed,
-    //         safe_command.turn_rate);
-    // }
+
+    velocity_command_t target = {
+        current_pose.theta, 0.0f, 0.0f, true
+    };
+
+    if (mission_should_stop())
+    {
+        reset_scan();
+        safe_command = target;
+    }
+    else if (reverse_recovery_active)
+    {
+        // Finish the reverse even if navigation now has a path.
+        target = bounded_scan_command(current_pose);
+        safe_command = target;
+    }
+    else if ((mission_should_explore() || mission_should_return_home()) &&
+        path == nullptr)
+    {
+        // Run recovery only once this cycle.
+        target = bounded_scan_command(current_pose);
+        safe_command = target;
+    }
+    else
+    {
+        target = pure_pursuit_update(path, &current_pose);
+        safe_command = avoid_obstacles(
+            target, current_pose, path != nullptr);
+    }
+
+    if (static_cast<uint32_t>(
+        millis() - last_motion_debug_ms) >= 500)
+    {
+        last_motion_debug_ms = millis();
+
+        Serial.printf(
+            "CMD PP: stop=%u v=%.3f w=%.3f | "
+            "SAFE: stop=%u v=%.3f w=%.3f\n",
+            target.stop ? 1u : 0u,
+            target.linear_speed,
+            target.turn_rate,
+            safe_command.stop ? 1u : 0u,
+            safe_command.linear_speed,
+            safe_command.turn_rate);
+        Serial.printf(
+            "MISSION state=%u | NAV state=%u path=%u "
+            "scan=%u reverse=%u steer=%.1f clearance=%.2f\n",
+            static_cast<unsigned>(mission_get_state()),
+            static_cast<unsigned>(navigation_get_status()),
+            navigation_has_path() ? 1u : 0u,
+            scan_active ? 1u : 0u,
+            reverse_recovery_active ? 1u : 0u,
+            vfh_get_steering_angle() * 180.0f / PI,
+            vfh_get_forward_clearance());
+    }
     // Override if mission state commands stop.
     if (mission_should_stop())
     {
         safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+    }
+
+    // Re-arm only after measured translation away from
+    // the position where this recovery attempt started.
+    if (scan_active &&
+        !safe_command.stop &&
+        safe_command.linear_speed > 0.02f)
+    {
+        const float dx = current_pose.x - scan_start_x;
+        const float dy = current_pose.y - scan_start_y;
+
+        if (dx * dx + dy * dy >=
+            kScanResetDistanceM * kScanResetDistanceM)
+        {
+            reset_scan();
+        }
     }
 }
 
