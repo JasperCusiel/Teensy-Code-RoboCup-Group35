@@ -30,8 +30,8 @@
 #define HOMING_SPEED 200
 #define LIMIT_SWITCH_BACK_OFF 1000
 #define PWM_SKIP 60 //was 80
-#define ACCURACY 1000
-#define REACHED_TOLERANCE 2500   // encoder counts
+#define ACCURACY 100
+#define REACHED_TOLERANCE 100   // encoder counts
 
 // PID tuning values
 #define SERVO_KP 0.03 //was 0.1
