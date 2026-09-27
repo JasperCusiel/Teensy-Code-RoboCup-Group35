@@ -16,14 +16,14 @@ namespace
 {
     // PP config
     constexpr float kLookaheadDistanceM = 0.50f;
-    constexpr float kGoalToleranceM = 0.15f;
-    constexpr float kNominalSpeedMps = 0.30f;
+    constexpr float kGoalToleranceM = 0.10f;
+    constexpr float kNominalSpeedMps = 0.20f;
     constexpr float kMinimumTrackingSpeedMps = 0.1f;
 
     // Turn-in-place config
     constexpr float kTurnInPlaceEnterErrorRad = PI / 4.0f; // 45 deg
     constexpr float kTurnInPlaceExitErrorRad = PI / 12.0f; // 15 deg
-    constexpr float kTurnInPlaceKp = 2.0f;
+    constexpr float kTurnInPlaceKp = 2.5f;
     constexpr float kMaxTurnInPlaceRateRadPerSec = 1.0f;
 
     constexpr float kMaxTrackingTurnRateRadPerSec = 2.5f;
