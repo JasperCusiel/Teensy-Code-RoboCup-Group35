@@ -49,19 +49,32 @@ void update_base_color()
 
 base_color_t get_current_color()
 {
-    // Get raw reading from colour sensor
-    tcs.getRawData(&current.red, &current.green, &current.blue, &base.clear);
-
-    if (base.green > 100 && base.blue > 100)
+    // Read the latest result without the integration delay.
+    if ((tcs.read8(TCS34725_STATUS) &
+        TCS34725_STATUS_AVALID) == 0)
     {
-        current.base_color = COLOR_BLUE;
+        current.base_color = COLOR_UNDEFINED;
+        return current.base_color;
     }
-    else if (base.green > 100)
+
+    current.clear = tcs.read16(TCS34725_CDATAL);
+    current.red = tcs.read16(TCS34725_RDATAL);
+    current.green = tcs.read16(TCS34725_GDATAL);
+    current.blue = tcs.read16(TCS34725_BDATAL);
+
+    if (current.clear == 0 || current.green == current.blue)
     {
-        current.base_color = COLOR_BLUE;
-    } else {
         current.base_color = COLOR_UNDEFINED;
     }
+    else if (current.green > current.blue)
+    {
+        current.base_color = COLOR_GREEN;
+    }
+    else
+    {
+        current.base_color = COLOR_BLUE;
+    }
+
     return current.base_color;
 }
 
