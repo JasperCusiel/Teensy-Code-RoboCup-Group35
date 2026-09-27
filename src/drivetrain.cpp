@@ -1,104 +1,299 @@
-//
-// Created by Jasper Cusiel on 06/09/2026.
-//
-
 #include "drivetrain.h"
 #include <Arduino.h>
+#include <Encoder.h>
 #include <Servo.h>
+#include <math.h>
 
 namespace
 {
-    // Motor drive config
-    constexpr uint8_t kLeftPwmPin = 28;
-    constexpr uint8_t kRightPwmPin = 1;
-    constexpr int kFullForwardUs = 1950;
-    constexpr int kFullReverseUs = 1050;
-    constexpr int kStopUs = 1500;
-    constexpr int kPWM_MAX = 255;
-    constexpr float kOpenLoopDeadbandMps = 0.005f;
-    constexpr uint8_t kPwmSkip = 170;
-    constexpr uint8_t kLeftSkip = 0;
-    constexpr uint8_t kRightSkip = 60;
+    constexpr uint8_t kLeftPwmPin = 28, kLeftENCA = 30, kLeftENCB = 31;
+    constexpr uint8_t kRightPwmPin = 1, kRightENCA = 2, kRightENCB = 3;
+    constexpr float kEncoderCpr = 3540.0f; // Actual counts per WHEEL revolution; no extra x4.
+    constexpr float kWheelDiameterM = 0.075f;
+    constexpr float kMetresPerCount = 3.14159265358979323846f * kWheelDiameterM / kEncoderCpr;
+    constexpr int kStopUs = 1500, kPulseSpanUs = 450;
+    constexpr float kMaxPwm = 255.0f;
+    float output_limit_pwm = kMaxPwm;
 
+    // Preserve the existing motor directions. Encoder polarity must be checked separately.
+    constexpr bool kLeftMotorInverted = true, kRightMotorInverted = false;
+    constexpr bool kLeftEncoderInverted = false, kRightEncoderInverted = false;
 
-    template <Servo& Motor, bool MotorInverted>
-    struct MotorCallbacks
+    // STARTING VALUES ONLY; these have not been tuned on the robot.
+    // kV units: command counts per (m/s). 850 assumes 255 corresponds to 0.30 m/s.
+    // Replace kV and kS with measured running feed-forward for each wheel/direction.
+    struct Tuning
     {
-        static void write(int16_t speed)
-        {
-            const int16_t driver_speed = MotorInverted ? -speed : speed;
-            const int pulse = map(driver_speed, -kPWM_MAX, kPWM_MAX, kFullReverseUs, kFullForwardUs);
-            Motor.writeMicroseconds(pulse);
-        }
-
-        static void brake() { Motor.writeMicroseconds(kStopUs); }
+        float kSForward, kSReverse, kVForward, kVReverse, kP, kI;
     };
 
-    // Motor driver uses PPM control (essentially the same as a servo)
-    // Motor drives are PPM controlled (thus the Servo library generates pulses).
-    Servo left_driver;
-    Servo right_driver;
+    constexpr Tuning kLeftTuning = {0.0f, 0.0f, 850.0f, 850.0f, 250.0f, 500.0f};
+    constexpr Tuning kRightTuning = {0.0f, 0.0f, 850.0f, 850.0f, 250.0f, 500.0f};
+    constexpr float kAccelerationMps2 = 0.40f;
+    constexpr float kDecelerationMps2 = 0.60f;
+    constexpr float kPwmSlewPerSec = 1000.0f;
+    constexpr float kSpeedFilterTimeConstantS = 0.030f;
+    constexpr float kTargetDeadbandMps = 0.003f;
+    constexpr uint32_t kMinimumUpdateUs = 5000;
+    constexpr uint32_t kMaximumUpdateUs = 50000;
+    constexpr uint32_t kReverseNeutralUs = 80000;
+    constexpr float kReversalStoppedMps = 0.015f;
+    constexpr uint32_t kStallUs = 3000000;
+    constexpr uint32_t kWrongDirectionUs = 250000;
 
-    using Motor1Callbacks = MotorCallbacks<left_driver, true>;
-    using Motor2Callbacks = MotorCallbacks<right_driver, false>;
+    Servo left_driver, right_driver;
+    Encoder left_encoder(kLeftENCA, kLeftENCB);
+    Encoder right_encoder(kRightENCA, kRightENCB);
 
-
-    int16_t wheel_speed_to_pwm(float wheel_speed_mps, int base_skip)
+    struct Wheel
     {
-        if (wheel_speed_mps > kDrivetrainMaxWheelSpeedMps)
+        float requested = 0, reference = 0, measured = 0, integral = 0, output = 0;
+        int32_t count = 0;
+        int direction = 0;
+        bool reversing = false;
+        uint32_t reverse_start_us = 0, stalled_us = 0, wrong_direction_us = 0;
+    };
+
+    Wheel left, right;
+    DrivetrainFault fault = DrivetrainFault::NONE;
+    bool sampled = false;
+    uint32_t previous_us = 0, last_interval_us = 0, max_interval_us = 0;
+
+    float clampf(float x, float lo, float hi) { return fminf(hi, fmaxf(lo, x)); }
+
+    float approach(float actual, float target, float step)
+    {
+        return actual + clampf(target - actual, -step, step);
+    }
+
+    void write_output(Servo& driver, bool inverted, float output)
+    {
+        const float logical = clampf(output, -kMaxPwm, kMaxPwm);
+        const float physical = inverted ? -logical : logical;
+        driver.writeMicroseconds(kStopUs + static_cast<int>(lroundf(physical * kPulseSpanUs / kMaxPwm)));
+    }
+
+    void reset_control(Wheel& w)
+    {
+        w.reference = w.integral = w.output = 0;
+        w.stalled_us = w.wrong_direction_us = 0;
+    }
+
+    void stop_wheel(Wheel& w, Servo& driver)
+    {
+        w.requested = 0;
+        reset_control(w);
+        // Keep direction history so a subsequent reversal still waits for neutral/low speed.
+        w.reversing = false;
+        driver.writeMicroseconds(kStopUs);
+    }
+
+    void trip(DrivetrainFault reason)
+    {
+        if (fault == DrivetrainFault::NONE) fault = reason;
+        drivetrain_stop();
+    }
+
+    void measure(Wheel& w, int32_t count, bool inverted, float dt)
+    {
+        // Unsigned subtraction defines counter wrap; widen before interpreting signed difference.
+        const uint32_t bits = static_cast<uint32_t>(count) - static_cast<uint32_t>(w.count);
+        const int64_t delta = bits <= 0x7fffffffU
+                                  ? static_cast<int64_t>(bits)
+                                  : static_cast<int64_t>(bits) - 0x100000000LL;
+        w.count = count;
+        const float speed = (inverted ? -1.0f : 1.0f) * static_cast<float>(delta) * kMetresPerCount / dt;
+        const float alpha = dt / (kSpeedFilterTimeConstantS + dt);
+        w.measured += alpha * (speed - w.measured);
+    }
+
+    void control(Wheel& w, const Tuning& t, float dt, uint32_t dt_us, uint32_t now,
+                 DrivetrainFault stall_fault, DrivetrainFault direction_fault)
+    {
+        if (w.requested == 0)
         {
-            wheel_speed_mps = kDrivetrainMaxWheelSpeedMps;
+            reset_control(w);
+            return;
         }
-        else if (wheel_speed_mps < -kDrivetrainMaxWheelSpeedMps)
+        const int direction = w.requested > 0 ? 1 : -1;
+        if (w.direction != 0 && direction != w.direction)
         {
-            wheel_speed_mps = -kDrivetrainMaxWheelSpeedMps;
+            w.reversing = true;
+            w.reverse_start_us = now;
+            reset_control(w);
+        }
+        w.direction = direction;
+        if (w.reversing)
+        {
+            reset_control(w);
+            if (static_cast<uint32_t>(now - w.reverse_start_us) < kReverseNeutralUs ||
+                fabsf(w.measured) > kReversalStoppedMps)
+                return;
+            w.reversing = false;
         }
 
-        const bool reverse = wheel_speed_mps < 0.0f;
-        const float magnitude_mps = reverse ? -wheel_speed_mps : wheel_speed_mps;
-        if (magnitude_mps < kOpenLoopDeadbandMps)
-        {
-            return 0;
-        }
+        const bool accelerating = fabsf(w.requested) > fabsf(w.reference);
+        w.reference = approach(w.reference, w.requested,
+                               (accelerating ? kAccelerationMps2 : kDecelerationMps2) * dt);
+        const float kS = direction > 0 ? t.kSForward : t.kSReverse;
+        const float kV = direction > 0 ? t.kVForward : t.kVReverse;
+        const float feedforward = direction * kS + kV * w.reference;
+        const float error = w.reference - w.measured;
 
-        const float normalized = magnitude_mps / kDrivetrainMaxWheelSpeedMps;
-        const int pwm = (base_skip + kPwmSkip) + static_cast<int>((kPWM_MAX - (kPwmSkip + base_skip)) * normalized);
-        return reverse ? (-pwm) : pwm;
+        // No opposite-drive braking while tracking: reduce toward neutral on overspeed.
+        const float low = direction > 0 ? 0.0f : -output_limit_pwm;
+        const float high = direction > 0 ? output_limit_pwm : 0.0f;
+        const float slew_low = fmaxf(low, w.output - kPwmSlewPerSec * dt);
+        const float slew_high = fminf(high, w.output + kPwmSlewPerSec * dt);
+        const float candidate_integral = clampf(w.integral + t.kI * error * dt, -kMaxPwm, kMaxPwm);
+        const float candidate = feedforward + t.kP * error + candidate_integral;
+        // Conditional integration accounts for both output saturation and slew limiting.
+        if ((candidate >= slew_low && candidate <= slew_high) ||
+            (candidate > slew_high && error < 0) || (candidate < slew_low && error > 0))
+        {
+            w.integral = candidate_integral;
+        }
+        w.output = clampf(feedforward + t.kP * error + w.integral, slew_low, slew_high);
+
+        if (fabsf(w.reference) > 0.03f && fabsf(w.output) > 180.0f && fabsf(w.measured) < 0.005f)
+            w.stalled_us += dt_us;
+        else w.stalled_us = 0;
+        if (direction * w.measured < -0.03f && fabsf(w.output) > 40.0f)
+            w.wrong_direction_us += dt_us;
+        else w.wrong_direction_us = 0;
+        if (w.stalled_us >= kStallUs) trip(stall_fault);
+        else if (w.wrong_direction_us >= kWrongDirectionUs) trip(direction_fault);
     }
 } // namespace
 
-void set_open_loop_wheel_speed_targets(float left_mps, float right_mps)
-{
-    if (fabsf(left_mps) < kOpenLoopDeadbandMps)
-    {
-        Motor1Callbacks::brake();
-    }
-    else
-    {
-        Motor1Callbacks::write(wheel_speed_to_pwm(left_mps, kLeftSkip));
-    }
-
-    if (fabsf(right_mps) < kOpenLoopDeadbandMps)
-    {
-        Motor2Callbacks::brake();
-    }
-    else
-    {
-        Motor2Callbacks::write(wheel_speed_to_pwm(right_mps, kRightSkip));
-    }
-    // Serial.printf(
-    //     "FINAL: L=%.3f R=%.3f\n",
-    //     left_mps,
-    //     right_mps
-    // );
-}
-
 void drivetrain_init()
 {
-    // Initialize motor drives
-    left_driver.attach(kLeftPwmPin, kFullReverseUs, kFullForwardUs);
-    right_driver.attach(kRightPwmPin, kFullReverseUs, kFullForwardUs);
+    left_driver.attach(kLeftPwmPin, kStopUs - kPulseSpanUs, kStopUs + kPulseSpanUs);
+    right_driver.attach(kRightPwmPin, kStopUs - kPulseSpanUs, kStopUs + kPulseSpanUs);
+    drivetrain_stop();
+    fault = DrivetrainFault::NONE;
+    sampled = false; // First scheduled update establishes time/count baselines after GO.
+    last_interval_us = max_interval_us = 0;
+    output_limit_pwm = kMaxPwm;
+}
 
-    // Make sure we don't command any motor speed on startup.
-    set_open_loop_wheel_speed_targets(0.0f, 0.0f);
+void drivetrain_stop()
+{
+    stop_wheel(left, left_driver);
+    stop_wheel(right, right_driver);
+}
+
+void drivetrain_clear_fault()
+{
+    drivetrain_stop();
+    fault = DrivetrainFault::NONE;
+    sampled = false;
+}
+
+DrivetrainFault drivetrain_get_fault() { return fault; }
+
+void drivetrain_debug_task()
+{
+    DrivetrainTelemetry t;
+    drivetrain_get_telemetry(&t);
+
+    Serial.printf(
+        "L ref=%.3f vel=%.3f pwm=%d | R ref=%.3f vel=%.3f pwm=%d | dt=%lu max=%lu fault=%u\n",
+        t.left_ramped_mps, t.left_measured_mps, (int)t.left_pwm,
+        t.right_ramped_mps, t.right_measured_mps, (int)t.right_pwm,
+        (unsigned long)t.last_interval_us,
+        (unsigned long)t.max_interval_us,
+        (unsigned)t.fault);
+}
+
+void set_open_loop_wheel_speed_targets(float l, float r)
+{
+    if (!isfinite(l) || !isfinite(r))
+    {
+        trip(DrivetrainFault::INVALID_TARGET);
+        return;
+    }
+    if (fault != DrivetrainFault::NONE)
+    {
+        drivetrain_stop();
+        return;
+    }
+    // Preserve wheel ratio if callers supply a target beyond the speed limit.
+    const float peak = fmaxf(fabsf(l), fabsf(r));
+    if (peak > kDrivetrainMaxWheelSpeedMps)
+    {
+        const float scale = kDrivetrainMaxWheelSpeedMps / peak;
+        l *= scale;
+        r *= scale;
+    }
+    left.requested = fabsf(l) < kTargetDeadbandMps ? 0 : l;
+    right.requested = fabsf(r) < kTargetDeadbandMps ? 0 : r;
+    // A zero command always reaches neutral immediately, even between update ticks.
+    if (left.requested == 0) stop_wheel(left, left_driver);
+    if (right.requested == 0) stop_wheel(right, right_driver);
+}
+
+void drivetrain_update()
+{
+    const uint32_t now = micros();
+    if (!sampled)
+    {
+        left.count = left_encoder.read();
+        right.count = right_encoder.read();
+        left.measured = right.measured = 0;
+        previous_us = now;
+        sampled = true;
+        return;
+    }
+    const uint32_t elapsed = now - previous_us;
+    if (elapsed < kMinimumUpdateUs) return;
+    previous_us = now;
+    last_interval_us = elapsed;
+    if (elapsed > max_interval_us) max_interval_us = elapsed;
+    const float dt = elapsed * 1.0e-6f;
+    measure(left, left_encoder.read(), kLeftEncoderInverted, dt);
+    measure(right, right_encoder.read(), kRightEncoderInverted, dt);
+    if (elapsed > kMaximumUpdateUs)
+    {
+        trip(DrivetrainFault::CONTROL_OVERRUN);
+        return;
+    }
+    if (fault != DrivetrainFault::NONE)
+    {
+        drivetrain_stop();
+        return;
+    }
+    control(left, kLeftTuning, dt, elapsed, now,
+            DrivetrainFault::LEFT_STALLED, DrivetrainFault::LEFT_ENCODER_DIRECTION);
+    if (fault != DrivetrainFault::NONE) return;
+    control(right, kRightTuning, dt, elapsed, now,
+            DrivetrainFault::RIGHT_STALLED, DrivetrainFault::RIGHT_ENCODER_DIRECTION);
+    if (fault != DrivetrainFault::NONE) return;
+    write_output(left_driver, kLeftMotorInverted, left.output);
+    write_output(right_driver, kRightMotorInverted, right.output);
+}
+
+void drivetrain_get_telemetry(DrivetrainTelemetry* t)
+{
+    if (!t) return;
+    *t = {
+        left.requested, right.requested, left.reference, right.reference,
+        left.measured, right.measured,
+        static_cast<int16_t>(lroundf(left.output)), static_cast<int16_t>(lroundf(right.output)),
+        left.count, right.count, last_interval_us, max_interval_us, fault
+    };
+}
+
+void drivetrain_set_output_limit(int maximum_pwm)
+{
+    const float limit = clampf(
+        static_cast<float>(maximum_pwm), 1.0f, kMaxPwm);
+
+    if (limit == output_limit_pwm)
+    {
+        return;
+    }
+
+    output_limit_pwm = limit;
+    drivetrain_stop(); // Clear old targets, PWM and integral before changing modes.
 }
