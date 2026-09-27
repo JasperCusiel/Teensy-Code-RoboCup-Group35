@@ -40,6 +40,19 @@ static unsigned long last_weight_seen_time = 0;
 
 void weight_pickup_state_update()
 {
+    if (mission_get_state() == MISSION_STOPPED ||
+        mission_get_state() == MISSION_IDLE)
+    {
+        if (current_state != PICKUP_STATUS_IDLE)
+        {
+            motion_controller_stop();
+            lifter_stop();
+        }
+
+        current_state = PICKUP_STATUS_IDLE;
+        motion_controller_set_override(false);
+        return;
+    }
     switch (current_state)
     {
     case PICKUP_STATUS_IDLE:
@@ -54,7 +67,7 @@ void weight_pickup_state_update()
         {
             if (is_lifter_reached_target() && mission_should_explore())
             {
-                mission_report_weight_detected();
+                mission_report_pickup_complete(true);
                 motion_controller_override_drive(0.0f, 0.0f);
                 current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
             }
@@ -170,7 +183,7 @@ void weight_pickup_state_update()
         {
             set_front_servo_down();
             motion_controller_override_drive(0.0f, 0.0f);
-            lifter_move_middle();
+            lifter_raise();
             current_state = PICKUP_STATUS_LIFTING_WEIGHT;
         }
         break;
