@@ -3,6 +3,7 @@
 //
 #include "frontier-detection.h"
 #include "occupancy-grid.h"
+#include "astar.h"
 #include <limits.h>
 
 // Frontier base exploration algorithm. A frontier is a known free map cell next to unknown space.
@@ -132,6 +133,13 @@ bool frontier_find_largest_goal_excluding(int robot_x, int robot_y,
         return false;
     }
 
+    bool reachable[MAP_WIDTH][MAP_HEIGHT] = {};
+
+    if (!astar_build_reachable_mask(robot_x, robot_y, reachable))
+    {
+        return false;
+    }
+
     bool visited[MAP_WIDTH][MAP_HEIGHT] = {}; // To keep track of frontier cells that have been processed.
     cell_t stack[kMapCellCount]; // Used fpr non-recursive depth first flood fill.
     cell_t component[kMapCellCount]; // Used to store every cell belonging to the current frontier cluster.
@@ -205,12 +213,56 @@ bool frontier_find_largest_goal_excluding(int robot_x, int robot_y,
 
             // Find the largest frontier, as it represents the largest boundary of unexplored space.
             // If equal, prefer the closer frontier.
-            int target_index = 0;
+            // At 10 cells/m this is 0.60 m.
+            // Keep this larger than navigation's 0.50 m goal tolerance,
+            // with allowance for the robot's position within its map cell.
+            constexpr int kMinimumGoalDistanceCells = 6;
+
+            int target_index = -1;
             int target_centroid_distance = INT_MAX;
+
             for (int i = 0; i < component_size; ++i)
             {
+                const cell_t candidate = component[i];
+
+                const int distance_from_robot = distance_squared(
+                    candidate.x,
+                    candidate.y,
+                    robot_x,
+                    robot_y);
+
+                if (distance_from_robot <
+                    kMinimumGoalDistanceCells * kMinimumGoalDistanceCells)
+                {
+                    continue;
+                }
+
+                if (!reachable[candidate.x][candidate.y])
+                {
+                    continue;
+                }
+
+                if (!astar_has_obstacle_clearance(
+                    candidate.x, candidate.y))
+                {
+                    continue;
+                }
+
+                if (frontier_is_rejected(
+                    candidate,
+                    rejected,
+                    rejected_count,
+                    reject_radius_cells))
+                {
+                    continue;
+                }
+
                 const int centroid_distance = distance_squared(
-                    component[i].x, component[i].y, centroid_x, centroid_y);
+                    candidate.x,
+                    candidate.y,
+                    centroid_x,
+                    centroid_y);
+
                 if (centroid_distance < target_centroid_distance)
                 {
                     target_centroid_distance = centroid_distance;
@@ -218,12 +270,13 @@ bool frontier_find_largest_goal_excluding(int robot_x, int robot_y,
                 }
             }
 
-            const cell_t target = component[target_index];
-            if (frontier_is_rejected(target, rejected, rejected_count,
-                                     reject_radius_cells))
+            // This cluster has no usable candidate. Try another cluster.
+            if (target_index < 0)
             {
                 continue;
             }
+
+            const cell_t target = component[target_index];
 
             const int robot_distance = distance_squared(target.x, target.y,
                                                         robot_x, robot_y);
