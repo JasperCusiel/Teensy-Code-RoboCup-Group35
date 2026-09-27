@@ -12,6 +12,7 @@
 #include "odometry.h"
 #include <math.h>
 #include "math_utils.h"
+#include <Arduino.h>
 
 namespace // Keep variables and helper functions private to this file.
 {
@@ -33,6 +34,11 @@ namespace // Keep variables and helper functions private to this file.
     constexpr uint8_t kAvoidanceReplanCooldownCycles = 20;
     constexpr bool kHeadingHoldTestMode = false;
     constexpr float kHeadingHoldTestSpeedMps = 0.1f;
+
+    // Virtual target distance used when following a VFH-selected bearing.
+    // Start with the same distance as the pure-pursuit lookahead.
+    constexpr float kAvoidanceLookaheadM = 0.50f;
+
     pose_t current_pose = {}; // Stores the latest EKF pose estimate
     velocity_command_t safe_command = {0.0f, 0.0f, 0.0f, true};
     // Most recent command passed through the obstical avoidance.
@@ -227,14 +233,30 @@ namespace // Keep variables and helper functions private to this file.
         }
         else
         {
-            // Preserve pure-pursuit feed-forward curvature, but reduce angular
-            // speed with the forward speed so slowing for VFH does not sharpen
-            // the commanded arc.
-            const float turn_rate_scale =
-                fabsf(target.linear_speed) > 0.001f
-                    ? safe.linear_speed / target.linear_speed
-                    : 0.0f;
-            safe.turn_rate *= turn_rate_scale;
+            // If VFH substantially changed the target bearing, generate
+            // curvature toward that new bearing.
+            if (deflection > kSteeringDirectionDeadbandRad)
+            {
+                const float curvature =
+                    2.0f * sinf(steering_relative) /
+                    kAvoidanceLookaheadM;
+
+                safe.turn_rate =
+                    safe.linear_speed * curvature;
+            }
+            else
+            {
+                // VFH accepted approximately the original direction.
+                // Keep pure pursuit's curvature when reducing speed.
+                const float speed_scale =
+                    fabsf(target.linear_speed) > 0.001f
+                        ? safe.linear_speed / target.linear_speed
+                        : 0.0f;
+
+                safe.turn_rate =
+                    target.turn_rate * speed_scale;
+            }
+
             reset_recovery_turn_tracking();
         }
         // A zero forward speed is still a valid rotate-in-place command.
@@ -296,6 +318,18 @@ void autonomy_task()
     // Advance the mission state
     mission_task();
 
+    if (!check_navigation_progress(current_pose))
+    {
+        safe_command = {
+            current_pose.theta,
+            0.0f,
+            0.0f,
+            true
+        };
+
+        return;
+    }
+
     if (kHeadingHoldTestMode)
     {
         safe_command = mission_should_stop()
@@ -323,6 +357,23 @@ void autonomy_task()
             : pure_pursuit_update(path, &current_pose);
     // Pass through VFH obstacle avoidance
     safe_command = avoid_obstacles(target, current_pose, path != nullptr);
+    // static uint32_t last_motion_debug_ms = 0;
+    //
+    // if (static_cast<uint32_t>(
+    //     millis() - last_motion_debug_ms) >= 500)
+    // {
+    //     last_motion_debug_ms = millis();
+    //
+    //     Serial.printf(
+    //         "CMD PP: stop=%u v=%.3f w=%.3f | "
+    //         "SAFE: stop=%u v=%.3f w=%.3f\n",
+    //         target.stop ? 1u : 0u,
+    //         target.linear_speed,
+    //         target.turn_rate,
+    //         safe_command.stop ? 1u : 0u,
+    //         safe_command.linear_speed,
+    //         safe_command.turn_rate);
+    // }
     // Override if mission state commands stop.
     if (mission_should_stop())
     {
@@ -332,6 +383,12 @@ void autonomy_task()
 
 void autonomy_motion_task()
 {
+    if (mission_get_state() == MISSION_STOPPED ||
+        mission_get_state() == MISSION_IDLE)
+    {
+        motion_controller_stop();
+        return;
+    }
     // Fast autonomy loop -> get latest pose and update motion controller with latest command.
     get_ekf_pose(&current_pose.x, &current_pose.y, &current_pose.theta);
     if (weight_pickup_get_state() == PICKUP_STATUS_IDLE)
