@@ -41,9 +41,10 @@ task_t tasks[] = {
     {imu_task, HZ_TO_US(95), 0},
     {odometry_update, HZ_TO_US(95), 0},
     {autonomy_motion_task, HZ_TO_US(95), 0},
-    {display_draw, HZ_TO_US(5), 0},
+    {drivetrain_update, HZ_TO_US(100), 0},
+    // {display_draw, HZ_TO_US(1), 0},
     {update_input, HZ_TO_US(5), 0},
-    {get_tof_reading, TOF_FULL_SCAN_PERIOD_US, 0},
+    {get_tof_reading, HZ_TO_US(1000), 0},
     {mapping_task, HZ_TO_US(6), 0},
     {autonomy_task, HZ_TO_US(20), 0},
     {telemetry_map_task, HZ_TO_US(6), 0},
@@ -53,7 +54,8 @@ task_t tasks[] = {
     {ir_reflective_update, HZ_TO_US(5), 0},
     {weight_dropoff_state_update, HZ_TO_US(10), 0},
     {weight_detection_task, HZ_TO_US(20), 0},
-    {smart_servo_monitor_task, HZ_TO_US(1), 0}
+    {smart_servo_monitor_task, HZ_TO_US(1), 0},
+    // {drivetrain_debug_task, HZ_TO_US(5), 0}
 };
 
 
