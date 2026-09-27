@@ -12,6 +12,7 @@
 #include "mapping.h"
 #include <limits.h>
 #include <math.h>
+#include <Arduino.h>
 
 // Navigation module own the high-level target and planned path, other modules query this state.
 
@@ -24,9 +25,10 @@ namespace
     constexpr float kNoFrontierScanAngleBeforeCompleteRad = 2.5f * kPi;
     constexpr uint8_t kRejectedFrontierCount = 8;
     constexpr uint8_t kRejectedFrontierRadiusCells = 3;
-    constexpr uint8_t kPathValidationSkipCells = 2;
     constexpr uint8_t kPathValidationAheadCells = 14;
     constexpr uint8_t kReplansBeforeGoalReject = 5;
+
+    constexpr float kHomeStagingY = 0.60f;
 
     navigation_goal_t active_goal = {NAV_GOAL_NONE, {0, 0}};
     // Current navigation target, either none, frontier or base.
@@ -50,6 +52,11 @@ namespace
 
     float goal_tolerance()
     {
+        if (active_goal.type == NAV_GOAL_BASE)
+        {
+            return 0.12f;
+        }
+
         return active_goal.type == NAV_GOAL_COVERAGE
                    ? kCoverageGoalToleranceM
                    : kDefaultGoalToleranceM;
@@ -169,18 +176,62 @@ namespace
 
     bool plan_from(const grid_point_t& start)
     {
-        // Rebuild path from robot cell to active goal.
         status = NAV_STATUS_PLANNING;
+
         active_path.length = 0;
+        active_path.escape_prefix_length = 0;
         replan_requested = false;
-        if (!astar_find_path(start.x, start.y, active_goal.cell.x,
-                             active_goal.cell.y, &active_path))
+
+        const bool found = astar_find_path(
+            start.x,
+            start.y,
+            active_goal.cell.x,
+            active_goal.cell.y,
+            &active_path);
+
+        status = found
+                     ? NAV_STATUS_FOLLOWING_PATH
+                     : NAV_STATUS_PATH_FAILED;
+
+        // Rate-limit diagnostics to avoid flooding serial output.
+        static uint32_t last_report_ms = 0;
+        const uint32_t now = millis();
+
+        if (static_cast<uint32_t>(now - last_report_ms) >= 500)
         {
-            status = NAV_STATUS_PATH_FAILED;
-            return false;
+            last_report_ms = now;
+
+            Serial.printf(
+                "PLAN %s: start=%d,%d state=%u clear=%u "
+                "goal=%d,%d type=%u state=%u clear=%u "
+                "length=%u escape=%u\n",
+                found ? "OK" : "FAIL",
+
+                start.x,
+                start.y,
+                (unsigned)map_get_state(start.x, start.y),
+                astar_has_obstacle_clearance(
+                    start.x, start.y)
+                    ? 1u
+                    : 0u,
+
+                active_goal.cell.x,
+                active_goal.cell.y,
+                (unsigned)active_goal.type,
+                (unsigned)map_get_state(
+                    active_goal.cell.x,
+                    active_goal.cell.y),
+                astar_has_obstacle_clearance(
+                    active_goal.cell.x,
+                    active_goal.cell.y)
+                    ? 1u
+                    : 0u,
+
+                (unsigned)active_path.length,
+                (unsigned)active_path.escape_prefix_length);
         }
-        status = NAV_STATUS_FOLLOWING_PATH;
-        return true;
+
+        return found;
     }
 
     uint16_t closest_path_index(const grid_point_t& robot_cell)
@@ -228,14 +279,29 @@ namespace
             return false;
         }
 
-        const uint16_t closest_index = closest_path_index(robot_cell);
-        const uint16_t first_index = closest_index + kPathValidationSkipCells;
+        // A marked escape path must include a normal-clearance
+        // destination after its escape prefix.
+        if (active_path.escape_prefix_length > 0 &&
+            active_path.escape_prefix_length >= active_path.length)
+        {
+            return true;
+        }
+
+        const uint16_t closest_index =
+            closest_path_index(robot_cell);
+
+        // Validate the next point rather than blindly skipping two.
+        // The closest point represents our current path position.
+        const uint16_t first_index = closest_index + 1;
+
         if (first_index >= active_path.length)
         {
             return false;
         }
 
-        uint16_t end_index = closest_index + kPathValidationAheadCells + 1;
+        uint16_t end_index =
+            closest_index + kPathValidationAheadCells + 1;
+
         if (end_index > active_path.length)
         {
             end_index = active_path.length;
@@ -244,16 +310,46 @@ namespace
         for (uint16_t i = first_index; i < end_index; ++i)
         {
             const grid_point_t& point = active_path.points[i];
-            if (cells_equal(point, active_goal.cell))
+
+            // Guard before accessing the occupancy array.
+            if (point.x < 0 || point.x >= MAP_WIDTH ||
+                point.y < 0 || point.y >= MAP_HEIGHT)
             {
-                if (map_get_state(point.x, point.y) == OCCUPIED)
+                return true;
+            }
+
+            const uint8_t state =
+                map_get_state(point.x, point.y);
+
+            // No upcoming path point may be occupied.
+            if (state == OCCUPIED)
+            {
+                return true;
+            }
+
+            const bool is_escape_point =
+                i < active_path.escape_prefix_length;
+
+            if (is_escape_point)
+            {
+                // Escape relaxes inflated clearance ONLY.
+                // It does not permit travel through unknown cells.
+                if (state != FREE)
                 {
                     return true;
                 }
+
                 continue;
             }
 
-            if (map_get_state(point.x, point.y) != FREE ||
+            // Preserve the existing normal-path goal exception.
+            // Goal occupancy/clearance policy is a separate fix.
+            if (cells_equal(point, active_goal.cell))
+            {
+                continue;
+            }
+
+            if (state != FREE ||
                 !astar_has_obstacle_clearance(point.x, point.y))
             {
                 return true;
@@ -279,7 +375,11 @@ void navigation_init()
 
     pose_t pose = {};
     get_ekf_pose(&pose.x, &pose.y, &pose.theta);
-    base_is_set = world_to_map(pose.x, pose.y, &base_cell.x, &base_cell.y);
+    base_is_set = world_to_map(
+        pose.x,
+        kHomeStagingY,
+        &base_cell.x,
+        &base_cell.y);
 }
 
 void navigation_task()
