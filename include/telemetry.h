@@ -2,7 +2,7 @@
 #define ROBOCUP_TELEMETRY_H
 
 // Set to 0 to remove map telemetry from the firmware build.
-#define MAP_TELEMETRY_ENABLED 1
+#define MAP_TELEMETRY_ENABLED 0
 
 void telemetry_init();
 
