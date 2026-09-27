@@ -3,6 +3,8 @@
 #include <Wire.h>
 #include <display.h>
 #include <SparkFunSX1509.h>
+#include "mission.h"
+#include "motion-controller.h"
 
 // ST api libraries are written in C
 extern "C" {
@@ -250,81 +252,159 @@ void get_ToFCalibration()
 
 void get_tof_reading()
 {
-    error = 0;
-    TimeStart = millis();
-    Timeout = 0;
-    for (Zone = 0; Zone < NumOfZonesPerSensor; Zone++)
+    enum class Phase : uint8_t
     {
-        for (Sensor = 0; Sensor < NumOfTOFSensors; Sensor++)
-        {
-            VL53L1_WrByte(Devs[Sensor], ROI_CONFIG__USER_ROI_CENTRE_SPAD, zone_center[Zone]);
-        }
-        idx = idx + 1;
-        for (Sensor = 0; Sensor < NumOfTOFSensors; Sensor++)
-        {
-            error = VL53L1X_CheckForDataReady(Devs[Sensor], &Sensorcheck);
-            while ((Sensorcheck == 0) && (Timeout == 0))
-            {
-                CurrentTime = millis();
-                if (CurrentTime > (TimeStart + (NumOfZonesPerSensor + 1) * TimingBudget * 2))
-                {
-                    Timeout = 1;
-                    Sensor = NumOfTOFSensors;
-                    Zone = NumOfZonesPerSensor;
-                }
-                else
-                {
-                    error += VL53L1X_CheckForDataReady(Devs[Sensor], &Sensorcheck);
-                }
-            }
-            if (Timeout == 0)
-            {
-                VL53L1_WrByte(Devs[Sensor], ROI_CONFIG__USER_ROI_CENTRE_SPAD, zone_center[Zone]);
-                VL53L1X_ClearInterrupt(Devs[Sensor]);
+        CONFIGURE,
+        WAIT_AND_READ,
+        FAULT
+    };
 
-                error += VL53L1X_GetDistance(Devs[Sensor], &Distance);
-                error += VL53L1X_GetRangeStatus(Devs[Sensor], &RangeStatus);
-                if ((RangeStatus == 0) || (RangeStatus == 7))
-                {
-                    if (Distance > 60000)
-                    {
-                        Distance = 0;
-                        PlotPolarData(Sensor, Zone, 0);
-                    }
-                    else
-                    {
-                        Distance = Distance + OffsetCal[Sensor * NumOfZonesPerSensor + Zone];
-                        if (Distance > 60000)
-                        {
-                            Distance = 0;
-                        }
-                        PlotPolarData(Sensor, Zone, Distance);
-                    }
-                }
-                else
-                {
-                    PlotPolarData(Sensor, Zone, 4000);
-                }
-            }
-        }
-    }
-    if (Timeout == 1)
+    constexpr uint32_t kMeasurementTimeoutMs = 400;
+
+    static Phase phase = Phase::CONFIGURE;
+    static uint8_t sensor_index = 0;
+    static uint8_t zone_index = 0;
+
+    static uint32_t started_ms[NumOfTOFSensors] = {};
+
+    // Latch communication/time-out faults rather than restarting
+    // the entire sensor array inside the running scheduler.
+    auto fail = [&]()
     {
-        ResetAndInitializeAllSensors();
-        Timeout = 0;
-        Serial.print("Reset Performed\n");
+        phase = Phase::FAULT;
+
+        motion_controller_set_enabled(false);
+        mission_stop();
+
+        Serial.println("TOF scan fault: stopped; restart required");
+    };
+
+    if (phase == Phase::FAULT)
+    {
+        return;
+    }
+
+    const uint16_t device = Devs[sensor_index];
+
+    if (phase == Phase::CONFIGURE)
+    {
+        // Establish which ROI will produce the next measurement.
+        // Stop first so an old ready result is not labelled as
+        // belonging to the newly selected ROI.
+        if (VL53L1X_StopRanging(device) != 0 ||
+            VL53L1X_ClearInterrupt(device) != 0 ||
+            VL53L1_WrByte(
+                device,
+                ROI_CONFIG__USER_ROI_CENTRE_SPAD,
+                zone_center[zone_index]) != 0 ||
+            VL53L1X_StartRanging(device) != 0)
+        {
+            fail();
+            return;
+        }
+
+        started_ms[sensor_index] = millis();
+
+        ++sensor_index;
+
+        if (sensor_index >= NumOfTOFSensors)
+        {
+            sensor_index = 0;
+            phase = Phase::WAIT_AND_READ;
+        }
+
+        return;
+    }
+
+    // Check once. If measurement is pending, let other tasks run.
+    uint8_t ready = 0;
+
+    if (VL53L1X_CheckForDataReady(device, &ready) != 0)
+    {
+        fail();
+        return;
+    }
+
+    if (!ready)
+    {
+        if (static_cast<uint32_t>(
+                millis() - started_ms[sensor_index]) >=
+            kMeasurementTimeoutMs)
+        {
+            fail();
+        }
+
+        return;
+    }
+
+    uint16_t distance_mm = 0;
+    uint8_t range_status = 0;
+
+    // Read the completed result before clearing its interrupt.
+    if (VL53L1X_GetDistance(device, &distance_mm) != 0 ||
+        VL53L1X_GetRangeStatus(device, &range_status) != 0 ||
+        VL53L1X_StopRanging(device) != 0 ||
+        VL53L1X_ClearInterrupt(device) != 0)
+    {
+        fail();
+        return;
+    }
+
+    const uint16_t index =
+        sensor_index * NumOfZonesPerSensor + zone_index;
+
+    // Retains the existing range-status interpretation.
+    // Validity-aware mapping/VFH remains a separate change.
+    if (range_status == 0 || range_status == 7)
+    {
+        int32_t corrected_mm = 0;
+
+        if (distance_mm > 0 && distance_mm <= 60000)
+        {
+            corrected_mm =
+                static_cast<int32_t>(distance_mm) +
+                OffsetCal[index];
+        }
+
+        if (corrected_mm <= 0 || corrected_mm > 60000)
+        {
+            PlotPolarData(sensor_index, zone_index, 0);
+        }
+        else
+        {
+            PlotPolarData(
+                sensor_index,
+                zone_index,
+                static_cast<uint16_t>(corrected_mm));
+        }
     }
     else
     {
-        for (size_t n = 0; n < NumOfTOFSensors * NumOfZonesPerSensor; n++)
-        {
-            scan.ranges[n] = LidarDistance[n] / 1000.0f;
-        }
+        PlotPolarData(sensor_index, zone_index, 4000);
     }
-    if (error != 0)
+
+    ++sensor_index;
+
+    if (sensor_index < NumOfTOFSensors)
     {
-        Serial.print("Some Errors seen\n");
+        return;
     }
+
+    sensor_index = 0;
+    ++zone_index;
+
+    if (zone_index >= NumOfZonesPerSensor)
+    {
+        // Publish only after a complete scan has been collected.
+        for (uint16_t i = 0; i < NUM_POINTS; ++i)
+        {
+            scan.ranges[i] = LidarDistance[i] / 1000.0f;
+        }
+
+        zone_index = 0;
+    }
+
+    phase = Phase::CONFIGURE;
 }
 
 lidar_scan* get_scan()
