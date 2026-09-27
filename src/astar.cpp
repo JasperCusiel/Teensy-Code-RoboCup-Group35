@@ -14,7 +14,7 @@ static path_t escape_path;
 
 namespace
 {
-    constexpr int kObstacleClearanceCells = 3;
+    constexpr int kObstacleClearanceCells = 2;
 }
 
 static bool in_map(int x, int y)
