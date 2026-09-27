@@ -6,6 +6,7 @@
 
 #include "astar.h"
 #include <math.h>
+#include <Arduino.h>
 
 // Create node for every point in map
 static astar_node_t nodes[MAP_WIDTH][MAP_HEIGHT];
@@ -136,6 +137,7 @@ static bool find_escape_path(int start_x, int start_y, path_t* path)
     // clearance until the nearest clearance-safe cell is reached. This path
     // is used only as a prefix; normal A* clearance applies afterwards.
     path->length = 0;
+    path->escape_prefix_length = 0;
     initialise_nodes();
 
     astar_node_t* queue[MAP_WIDTH * MAP_HEIGHT];
@@ -282,58 +284,155 @@ static bool find_clearance_path(int start_x, int start_y,
     return false;
 }
 
-bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* path)
+bool astar_find_path(
+    int start_x,
+    int start_y,
+    int goal_x,
+    int goal_y,
+    path_t* path)
 {
     if (path == nullptr)
     {
         return false;
     }
-    path->length = 0;
 
-    if (!in_map(start_x, start_y) || !in_map(goal_x, goal_y))
+    path->length = 0;
+    path->escape_prefix_length = 0;
+
+    if (!in_map(start_x, start_y) ||
+        !in_map(goal_x, goal_y))
     {
         return false;
     }
 
-    // Preserve the normal one-cell path even if the robot currently lacks
-    // inflated clearance.
+    // Preserve existing normal-path behavior.
     if ((start_x == goal_x && start_y == goal_y) ||
         astar_has_obstacle_clearance(start_x, start_y))
     {
-        return find_clearance_path(start_x, start_y, goal_x, goal_y, path);
+        return find_clearance_path(
+            start_x, start_y,
+            goal_x, goal_y,
+            path);
     }
 
     if (!find_escape_path(start_x, start_y, &escape_path) ||
         escape_path.length == 0)
     {
+        Serial.println("ASTAR: no escape to a clearance-safe cell");
+        return false;
+    }
+
+    const grid_point_t escape_cell =
+        escape_path.points[escape_path.length - 1];
+
+    if (!find_clearance_path(
+        escape_cell.x, escape_cell.y,
+        goal_x, goal_y, path))
+    {
+        Serial.println("ASTAR: escape found, but no onward path");
         path->length = 0;
         return false;
     }
 
-    const grid_point_t escape_cell = escape_path.points[escape_path.length - 1];
-    if (!find_clearance_path(escape_cell.x, escape_cell.y,
-                             goal_x, goal_y, path))
-    {
-        return false;
-    }
+    // The final escape point is also the first point of the
+    // normal path, so it must not be copied twice.
+    const uint16_t prefix_length =
+        escape_path.length - 1;
 
-    const uint16_t prefix_length = escape_path.length - 1;
-    if (prefix_length + path->length > MAP_WIDTH * MAP_HEIGHT)
+    if (prefix_length + path->length >
+        MAP_WIDTH * MAP_HEIGHT)
     {
         path->length = 0;
         return false;
     }
 
-    // Make room for the escape prefix. The final escape cell is already the
-    // first cell of the clearance-safe suffix, so do not duplicate it.
-    for (int i = static_cast<int>(path->length) - 1; i >= 0; --i)
+    // Move the normal path forward to make room.
+    for (int i = static_cast<int>(path->length) - 1;
+         i >= 0;
+         --i)
     {
-        path->points[i + prefix_length] = path->points[i];
+        path->points[i + prefix_length] =
+            path->points[i];
     }
+
+    // Insert the escape points.
     for (uint16_t i = 0; i < prefix_length; ++i)
     {
         path->points[i] = escape_path.points[i];
     }
+
     path->length += prefix_length;
+    path->escape_prefix_length = prefix_length;
+
+    return true;
+}
+
+bool astar_build_reachable_mask(
+    int start_x,
+    int start_y,
+    bool reachable[MAP_WIDTH][MAP_HEIGHT])
+{
+    for (int x = 0; x < MAP_WIDTH; ++x)
+    {
+        for (int y = 0; y < MAP_HEIGHT; ++y)
+        {
+            reachable[x][y] = false;
+        }
+    }
+
+    if (!in_map(start_x, start_y) ||
+        map_get_state(start_x, start_y) == OCCUPIED)
+    {
+        return false;
+    }
+
+    grid_point_t seed = {start_x, start_y};
+
+    if (!astar_has_obstacle_clearance(start_x, start_y))
+    {
+        if (!find_escape_path(start_x, start_y, &escape_path) ||
+            escape_path.length == 0)
+        {
+            return false;
+        }
+
+        seed = escape_path.points[escape_path.length - 1];
+    }
+
+    // Shared workspace: use from the cooperative main thread only.
+    static grid_point_t queue[MAP_WIDTH * MAP_HEIGHT];
+
+    int head = 0;
+    int tail = 0;
+
+    queue[tail++] = seed;
+    reachable[seed.x][seed.y] = true;
+
+    constexpr int8_t directions[4][2] = {
+        {1, 0}, {-1, 0}, {0, 1}, {0, -1}
+    };
+
+    while (head < tail)
+    {
+        const grid_point_t current = queue[head++];
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const int nx = current.x + directions[i][0];
+            const int ny = current.y + directions[i][1];
+
+            if (!in_map(nx, ny) ||
+                reachable[nx][ny] ||
+                map_get_state(nx, ny) != FREE ||
+                !astar_has_obstacle_clearance(nx, ny))
+            {
+                continue;
+            }
+
+            reachable[nx][ny] = true;
+            queue[tail++] = {nx, ny};
+        }
+    }
+
     return true;
 }

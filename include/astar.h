@@ -17,6 +17,11 @@ typedef struct
 {
     grid_point_t points[MAP_WIDTH * MAP_HEIGHT];
     uint16_t length;
+
+    // Number of initial points allowed to lack normal inflated
+    // clearance. The first normal-clearance point is at this index.
+    // Zero means this is an ordinary path.
+    uint16_t escape_prefix_length;
 } path_t;
 
 typedef struct
@@ -40,5 +45,9 @@ typedef struct
 void astar_init();
 bool astar_has_obstacle_clearance(int x, int y);
 bool astar_find_path(int start_x, int start_y, int goal_x, int goal_y, path_t* path);
+bool astar_build_reachable_mask(
+    int start_x,
+    int start_y,
+    bool reachable[MAP_WIDTH][MAP_HEIGHT]);
 
 #endif // ROBOCUP_ASTAR_H
