@@ -5,6 +5,8 @@
 #include "coverage-planner.h"
 
 #include "occupancy-grid.h"
+#include "odometry.h"
+#include "mapping.h"
 
 namespace
 {
@@ -125,20 +127,47 @@ bool coverage_planner_get_goal(grid_point_t* goal)
         return false;
     }
 
-    // Look ahead for a goal that is usable with the current map, but do not
-    // consume unavailable goals. UNKNOWN cells and temporarily blocked FREE
-    // cells may become valid after more scan evidence arrives.
+    pose_t pose = {};
+    get_ekf_pose(&pose.x, &pose.y, &pose.theta);
+
+    grid_point_t robot_cell = {};
+
+    if (!world_to_map(
+        pose.x, pose.y,
+        &robot_cell.x, &robot_cell.y))
+    {
+        return false;
+    }
+
+    bool reachable[MAP_WIDTH][MAP_HEIGHT] = {};
+
+    if (!astar_build_reachable_mask(
+        robot_cell.x,
+        robot_cell.y,
+        reachable))
+    {
+        return false;
+    }
+
     for (uint16_t candidate_index = current_goal;
          candidate_index < goal_count;
          ++candidate_index)
     {
         const grid_point_t candidate = goals[candidate_index];
-        if (cell_has_clearance(candidate.x, candidate.y))
+
+        if (!cell_has_clearance(candidate.x, candidate.y))
         {
-            current_goal = candidate_index;
-            *goal = candidate;
-            return true;
+            continue;
         }
+
+        if (!reachable[candidate.x][candidate.y])
+        {
+            continue;
+        }
+
+        current_goal = candidate_index;
+        *goal = candidate;
+        return true;
     }
 
     return false;
