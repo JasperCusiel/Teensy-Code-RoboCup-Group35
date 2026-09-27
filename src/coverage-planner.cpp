@@ -72,9 +72,11 @@ namespace
 
         bool left_to_right = true;
 
-        for (int y = kStartY + kCoverageMarginCells;
-             y < MAP_HEIGHT - kCoverageMarginCells;
-             y += kSurveySpacingCells)
+        // Home is at the low-Y end of the arena. Begin at the opposite end so
+        // the robot works back toward home as the round progresses.
+        for (int y = MAP_HEIGHT - 1 - kCoverageMarginCells;
+             y >= kStartY + kCoverageMarginCells;
+             y -= kSurveySpacingCells)
         {
             if (left_to_right)
             {
