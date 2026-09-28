@@ -275,7 +275,7 @@ void drivetrain_update()
     measure(right, right_encoder.read(), kRightEncoderInverted, dt);
     if (elapsed > kMaximumUpdateUs)
     {
-        trip(DrivetrainFault::CONTROL_OVERRUN);
+        //trip(DrivetrainFault::CONTROL_OVERRUN);
         return;
     }
     if (fault != DrivetrainFault::NONE)
