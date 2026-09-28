@@ -8,7 +8,7 @@
 #include "navigation.h"
 #include "coverage-planner.h"
 
-#define STATUS_LED_DATA_PIN A12
+#define STATUS_LED_DATA_PIN A10
 
 namespace
 {
