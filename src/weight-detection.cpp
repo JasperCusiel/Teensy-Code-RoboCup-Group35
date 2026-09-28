@@ -217,24 +217,40 @@ void filter() //filter out random pixels
 }
 
 void draw_depth_data(U8G2& u8g2) {
-    uint32_t sum[64] = {0};
+    static uint32_t last_sample_ms = 0;
+    static uint32_t sum[64] = {0};
+    static uint8_t sample_count = 0;
+
+    const uint32_t now = millis();
+
+    // Sample every 20 ms without blocking
+    if ((now - last_sample_ms) < 20U)
+    {
+        return;
+    }
+    last_sample_ms = now;
+
     uint16_t temp[64];
+    tof.getAllData(temp);
 
-    // Average multiple samples
-    for(int n = 0; n < 8; n++) {
-        tof.getAllData(temp);
+    for(int i = 0; i < 64; i++) {
+        sum[i] += temp[i];
+    }
 
-        for(int i = 0; i < 64; i++) {
-            sum[i] += temp[i];
-        }
+    sample_count++;
 
-        delay(20);
+    // Wait until we have 8 averaged samples before displaying
+    if (sample_count < 8)
+    {
+        return;
     }
 
     // Compute averaged values
     for(int i = 0; i < 64; i++) {
         buf[i] = sum[i] / 8;
+        sum[i] = 0;
     }
+    sample_count = 0;
 
     // Draw the depth data
     drawToF_dithered_fast(u8g2, 150, 0, 0);
