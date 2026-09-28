@@ -4,6 +4,8 @@
 #include "weight-detection.h"
 #include "DFRobot_MatrixLidar.h"
 #include "button.h"
+#include "mission.h"
+#include "math.h"
 
 
 #define TOF_ARRAY_ADDRESS 0x33
@@ -49,7 +51,6 @@ bool weight_detection_init() {
 }
 
 
-void drawToF_dithered_fast(U8G2 &u8g2,
 void weight_detection_task()
 {
     static uint32_t last_sample_ms = 0;
@@ -119,110 +120,61 @@ void weight_detection_task()
     }
 }
 
-void drawToF_dithered_fast(U8G2& u8g2,
-
-                           uint16_t d_max,
-                           int x0, int y0)
+void drawToF_dithered_fast(U8G2& u8g2, uint16_t d_max, int x0, int y0)
 {
-  // 4x4 Bayer matrix (0-15)
-  static const uint8_t bayer[4][4] = {
-    { 0,  8,  2, 10},
-    {12,  4, 14,  6},
-    { 3, 11,  1,  9},
-    {15,  7, 13,  5}
-  };
+    // 4x4 Bayer matrix (0-15)
+    static const uint8_t bayer[4][4] = {
+        {0,  8,  2, 10},
+        {12,  4, 14,  6},
+        {3, 11,  1,  9},
+        {15,  7, 13,  5}
+    };
 
-  const int cell_size = 8;
+    const int cell_size = 8;
 
+    // Scale d_max difference to 0-15 brightness
+    uint32_t scale = (15UL << 12) / d_max;
 
-  // Scale d_max difference to 0-15 brightness
-  uint32_t scale = (15UL << 12) / d_max;
+    uint16_t max_value = 0;
 
-    if (weight_detected)
-    {
-        switch (weight_type){
-            case WEIGHT_2X2:
-            u8g2.drawStr(70, 10, "2X2");
-            break;
-
-            case WEIGHT_2X3:
-            u8g2.drawStr(70, 10, "2X3");
-            break;
-
-            default:
-            u8g2.drawStr(70, 10, "WEIGHT");
-            break;
-        }
-    }
-    else if (wall_detected)
-    {
-        u8g2.drawStr(70, 10, "WALL");
-    }
-
-
-  uint16_t max_value = 0;
-
-  for (int i = 0; i <64; i ++){
-
-  int16_t d = (int16_t)calibration[i] - (int16_t)buf[i];
-
-    active[i] = (d >0 && d < d_max);
-  }
-  filter();
-  weight_detected = detect_weight();
-
-  if (weight_detected){
-    u8g2.drawStr(70,10, "WEIGHT!");
-  }
-
-  for (int cy = 0; cy < 8; cy++) {
+    for (int cy = 0; cy < 8; cy++) {
         for (int cx = 0; cx < 8; cx++) {
-
             int index = cy * 8 + cx;
 
-      // Remove calibrated floor
-      int16_t d = (int16_t)calibration[index] -
-                  (int16_t)buf[index];
+            // Remove calibrated floor
+            int16_t d = (int16_t)calibration[index] - (int16_t)buf[index];
 
-      // Ignore anything further than the floor
-      if (d < 0)
-        d = 0;
+            // Ignore anything further than the floor
+            if (d < 0)
+                d = 0;
 
-      if (d > d_max)
-        d = 0;
+            if (d > d_max)
+                d = 0;
 
-      if (d > max_value)
-        max_value = d;
+            if (d > max_value)
+                max_value = d;
 
+            // Convert to brightness 0-15
+            uint32_t norm = (uint32_t)d * scale;
+            uint8_t level = norm >> 12;
 
-      // Convert to brightness 0-15
-      uint32_t norm = (uint32_t)d * scale;
-      uint8_t level = norm >> 12;
+            int base_x = x0 + cx * cell_size;
+            int base_y = y0 + cy * cell_size;
 
+            // Draw 8x8 dithered block
+            for (int py = 0; py < cell_size; py++) {
+                int sy = base_y + py;
+                const uint8_t *row = bayer[py & 3];
 
-      int base_x = x0 + cx * cell_size;
-      int base_y = y0 + cy * cell_size;
-
-
-      // Draw 8x8 dithered block
-      for (int py = 0; py < cell_size; py++) {
-
-        int sy = base_y + py;
-        const uint8_t *row = bayer[py & 3];
-
-        for (int px = 0; px < cell_size; px++) {
-
-          if (level > row[px & 3]) {
-            u8g2.drawPixel(base_x + px, sy);
-          }
-
-          }
+                for (int px = 0; px < cell_size; px++) {
+                    if (level > row[px & 3]) {
+                        u8g2.drawPixel(base_x + px, sy);
+                    }
+                }
+            }
         }
-      }
     }
-  }
-
-
+}
 
 void filter() //filter out random pixels
 {
@@ -234,9 +186,9 @@ void filter() //filter out random pixels
             int index = cy * 8 + cx;
 
             if (!active[index]){
-              continue;
+                continue;
             }
-          
+
             int neighbours = 0;
             if (cx > 0 && active[index - 1]){
                 neighbours++;
@@ -264,36 +216,51 @@ void filter() //filter out random pixels
     }
 }
 
-bool detect_weight(){ //by finding a stack of 3 pixels in a coloumn (unsure)
-  for (int y = 0; y < 6; y++ ){
-    for(int x = 0; x < 8; x++){
+void draw_depth_data(U8G2& u8g2) {
+    uint32_t sum[64] = {0};
+    uint16_t temp[64];
 
-      int i = y * 8 + x;
-      if(active[i] && active[i + 8] && active[i+16]){
-        return true;
-      }
+    // Average multiple samples
+    for(int n = 0; n < 8; n++) {
+        tof.getAllData(temp);
+
+        for(int i = 0; i < 64; i++) {
+            sum[i] += temp[i];
+        }
+
+        delay(20);
     }
-  }
 
-  return false;
-}
-
-
-void draw_depth_data(U8G2 &u8g2) {
-  // tof.getAllData(buf);
-
-  uint32_t sum[64] = {0};
-  uint16_t temp[64];
-
-for(int n = 0; n < 8; n++) {
-    tof.getAllData(temp);
-
+    // Compute averaged values
     for(int i = 0; i < 64; i++) {
-        sum[i] += temp[i];
+        buf[i] = sum[i] / 8;
     }
 
-    delay(20);
+    // Draw the depth data
+    drawToF_dithered_fast(u8g2, 150, 0, 0);
 
+    // Display weight status
+    if (weight_detected)
+    {
+        switch (weight_type){
+            case WEIGHT_2X2:
+                u8g2.drawStr(70, 10, "2X2");
+                break;
+
+            case WEIGHT_2X3:
+                u8g2.drawStr(70, 10, "2X3");
+                break;
+
+            default:
+                u8g2.drawStr(70, 10, "WEIGHT");
+                break;
+        }
+    }
+    else if (wall_detected)
+    {
+        u8g2.drawStr(70, 10, "WALL");
+    }
+}
 
 static bool is_active_cell(int x, int y)
 {
@@ -381,51 +348,44 @@ bool detect_weight()
 
     weight_type = WEIGHT_NONE;
     return false;
-
-}
-
-for(int i = 0; i < 64; i++) {
-    buf[i] = sum[i] / 8;
-}
-
-
-  drawToF_dithered_fast(u8g2,150,0, 0);
-  if (read_button(A9) == LOW) {
-    u8g2.drawStr(70, 10, "calibrating...");
-    fill_calibration_matrix();
-
-}
 }
   
 
 void fill_calibration_matrix() {
-  // Reset calibration data
-
-  for (size_t j = 0; j < 64; j++) {
-    calibration[j] = 0;
-  }
-
-  for (size_t i = 0; i < 10; i++) {
-    tof.getAllData(buf);
-    // Add data to calibration buffer
+    // Reset calibration data
     for (size_t j = 0; j < 64; j++) {
-      calibration[j] += buf[j];
+        calibration[j] = 0;
     }
-    delay(50); // Wait for new frame
 
-  }
-  // Average data
-  for (size_t j = 0; j < 64; j++) {
-    calibration[j] = calibration[j] / 10;
-  }
+    for (size_t i = 0; i < 10; i++) {
+        tof.getAllData(buf);
+        // Add data to calibration buffer
+        for (size_t j = 0; j < 64; j++) {
+            calibration[j] += buf[j];
+        }
+        delay(50); // Wait for new frame
+    }
 
-    drawToF_dithered_fast(u8g2, 200, 0, 0);
-    if (read_button(A9) == LOW)
+    // Average data
+    for (size_t j = 0; j < 64; j++) {
+        calibration[j] = calibration[j] / 10;
+    }
+}
+
+static bool tof_array_sees_wall()
+{
+    // Check center column (3-4) for walls
+    for (int y = 0; y < 8; y++)
     {
-        u8g2.drawStr(70, 10, "calibrating...");
-        fill_calibration_matrix();
+        int i = y * 8 + 3;  // Center column
+        int16_t d = (int16_t)calibration[i] - (int16_t)buf[i];
+        
+        if (d > WALL_MIN_RANGE_M && d < WALL_MAX_RANGE_M)
+        {
+            return true;
+        }
     }
-
+    return false;
 }
 
 
