@@ -42,7 +42,7 @@ task_t tasks[] = {
     {odometry_update, HZ_TO_US(95), 0},
     {autonomy_motion_task, HZ_TO_US(95), 0},
     {drivetrain_update, HZ_TO_US(100), 0},
-    // {display_draw, HZ_TO_US(1), 0},
+    {display_draw, HZ_TO_US(4), 0},
     {update_input, HZ_TO_US(5), 0},
     {get_tof_reading, HZ_TO_US(1000), 0},
     {mapping_task, HZ_TO_US(6), 0},
@@ -53,7 +53,7 @@ task_t tasks[] = {
     {status_leds_task, HZ_TO_US(1), 0},
     {ir_reflective_update, HZ_TO_US(5), 0},
     {weight_dropoff_state_update, HZ_TO_US(10), 0},
-    //{weight_detection_task, HZ_TO_US(10), 0},
+    {weight_detection_task, HZ_TO_US(10), 0},
     {smart_servo_monitor_task, HZ_TO_US(1), 0},
     {drivetrain_debug_task, HZ_TO_US(2), 0}
 };
@@ -98,9 +98,7 @@ void setup()
         delay(1);
     }
 
-    display_set_page(PAGE_8X8_TOF);
-    Serial.println("Start");
-    display_set_page(PAGE_8X8_TOF);
+    display_set_page(PAGE_MENU);
     Serial.println("Start");
     mission_start();
     scheduler_init(tasks, NUM_TASKS);
