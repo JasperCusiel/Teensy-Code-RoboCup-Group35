@@ -156,6 +156,12 @@ void weight_pickup_state_update()
             motion_controller_override_drive(PICKUP_DRIVE_SPEED, 0.0f);
             current_state = PICKUP_STATUS_FAKE_WEIGHT_MOVING;
         }
+        if (is_real_weight_inductive_sensor())
+        {
+            lifter_stop();
+            current_state = PICKUP_STATUS_LOWERING_RAILS;
+        }
+
         break;
 
 

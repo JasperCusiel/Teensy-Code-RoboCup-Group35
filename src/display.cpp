@@ -141,48 +141,37 @@ void display_init()
     pinMode(SW_PIN, INPUT_PULLUP);
 }
 
-static bool display_dirty = true;
-static uint32_t last_display_draw_ms = 0;
-
-void display_request_redraw()
-{
-    display_dirty = true;
-}
-
 void display_draw()
 {
-    const uint32_t now = millis();
+    // Called periodically to draw the selected page/menu
+    display.firstPage();
 
-    if (!display_dirty)
+    do
     {
-        return;
+        display.setFont(u8g2_font_6x12_tr);
+        switch (currentPage)
+        {
+        case PAGE_MENU: draw_menu();
+            break;
+        case PAGE_VFH: draw_vfh(vfh_get_histogram());
+            break;
+        case PAGE_ODOM: draw_odometry();
+            break;
+        case PAGE_DEBUG: draw_debug();
+            break;
+        case PAGE_8X8_TOF: draw_depth_data(display);
+            break;
+        case PAGE_MAP: draw_map();
+            break;
+        case PAGE_MISSION: draw_mission();
+            break;
+        case PAGE_BOOT_STATUS: draw_boot_status();
+            break;
+        case PAGE_WEIGHT_PICKUP: draw_weight_pickup();
+            break;
+        }
     }
-
-    if ((now - last_display_draw_ms) < 200U) // 5 Hz max
-    {
-        return;
-    }
-
-    last_display_draw_ms = now;
-
-    display.clearBuffer();
-    display.setFont(u8g2_font_6x12_tr);
-
-    switch (currentPage)
-    {
-        case PAGE_MENU:      draw_menu(); break;
-        case PAGE_VFH:       draw_vfh(vfh_get_histogram()); break;
-        case PAGE_ODOM:      draw_odometry(); break;
-        case PAGE_DEBUG:     draw_debug(); break;
-        case PAGE_8X8_TOF:   draw_depth_data(display); break;
-        case PAGE_MAP:       draw_map(); break;
-        case PAGE_MISSION:   draw_mission(); break;
-        case PAGE_BOOT_STATUS: draw_boot_status(); break;
-        case PAGE_WEIGHT_PICKUP: draw_weight_pickup(); break;
-    }
-
-    display.sendBuffer();
-    display_dirty = false;
+    while (display.nextPage());
 }
 
 void display_log(const char* msg)
@@ -203,7 +192,7 @@ void display_log(const char* msg)
         lines[lineCount][16] = '\0';
         lineCount++;
     }
-    display_request_redraw();
+    display_draw();
 }
 
 void display_log_status(const char* name, bool ok)
@@ -448,6 +437,9 @@ void draw_mission()
         break;
     case MISSION_COMPLETE:
         display.drawStr(42, 10, "COMPLETE");
+        break;
+    case MISSION_RECOVERING:
+        display.drawStr(42, 10, "RECOVER");
         break;
     case MISSION_RETURN_HOME:
         display.drawStr(42, 10, "RETURN HOME");
