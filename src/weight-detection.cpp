@@ -48,9 +48,8 @@ bool weight_detection_init() {
   return false;
 }
 
-<<<<<<< Updated upstream
+
 void drawToF_dithered_fast(U8G2 &u8g2,
-=======
 void weight_detection_task()
 {
     static uint32_t last_sample_ms = 0;
