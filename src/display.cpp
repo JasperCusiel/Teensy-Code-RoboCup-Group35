@@ -425,6 +425,7 @@ void draw_map()
 
 void draw_mission()
 {
+    // Draws the mission FSM to the display for debug
     mission_state_t state = mission_get_state();
     display.drawStr(2, 10, "STATE: ");
     switch (state)
@@ -453,7 +454,7 @@ void draw_mission()
     default:
         break;
     }
-
+    // Also draw NAV FSM status
     display.drawStr(2, 22, "NAV: ");
     switch (navigation_get_status())
     {
@@ -478,7 +479,7 @@ void draw_mission()
     default:
         break;
     }
-
+    // Draw goal type
     const navigation_goal_t goal = navigation_get_goal();
     display.drawStr(2, 34, "GOAL: ");
     switch (goal.type)
@@ -498,13 +499,11 @@ void draw_mission()
     default:
         break;
     }
-
+    // Draw to the actual screen
     char buf[22];
     snprintf(buf, sizeof(buf), "CELL:%02d,%02d", goal.cell.x, goal.cell.y);
     display.drawStr(2, 46, buf);
-    snprintf(buf, sizeof(buf), "COV:%u/%u",
-             coverage_planner_goal_index(),
-             coverage_planner_goal_count());
+    snprintf(buf, sizeof(buf), "COV:%u/%u", coverage_planner_goal_index(), coverage_planner_goal_count());
     display.drawStr(2, 58, buf);
 }
 

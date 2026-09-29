@@ -56,5 +56,6 @@ bool read_limit_switch(uint8_t pin)
 
 bool read_io_pin(uint8_t pin)
 {
+    // Returns pinstate from IO expander so control stays within this module
     return digitalIO.digitalRead(pin);
 }

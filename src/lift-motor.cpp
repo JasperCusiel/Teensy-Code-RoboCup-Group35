@@ -34,9 +34,9 @@
 #define REACHED_TOLERANCE 100   // encoder counts
 
 // PID tuning values
-#define SERVO_KP 0.05 //was 0.1
-#define SERVO_KI 0.05 //was 0.1
-#define SERVO_KD 0.01 //was 0.05
+#define SERVO_KP 0.05
+#define SERVO_KI 0.05
+#define SERVO_KD 0.01
 
 #define LIFTER_UP_POS   (-26000)
 #define LIFTER_DOWN_POS (-200)
@@ -177,15 +177,13 @@ bool lifter_motor_init()
 
 void lifter_stop()
 {
-    // Command a hold at the current position rather than cutting the PID loop
-    // entirely - this keeps the motor actively holding against gravity/load
-    // rather than free-wheeling.
+    // Keep motor at current position
     set_targets(servo1.getActualPosition(), servo2.getActualPosition());
 }
 
 void lifter_motor_update()
 {
-    // Must be called every loop iteration to drive the PID
+    // Runs PID loop
     servo1.run();
     servo2.run();
 }
@@ -197,10 +195,12 @@ void lifter_move_middle() { set_targets(LIFTER_UP_POS / 2, LIFTER_UP_POS / 2); }
 
 bool is_lifter_reached_target()
 {
+    // Reached if within target
     return labs(servo1.getActualPosition() - target1) <= REACHED_TOLERANCE &&
         labs(servo2.getActualPosition() - target2) <= REACHED_TOLERANCE;
 }
 
+// Helpers
 long lifter_get_position1()
 {
     return servo1.getActualPosition();

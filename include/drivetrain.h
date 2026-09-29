@@ -33,5 +33,5 @@ void drivetrain_set_output_limit(int maximum_pwm);
 
 // Name retained to avoid changes in existing motion-controller.cpp.
 // This now sets CLOSED-LOOP velocity targets; drivetrain_update drives the motors.
-void set_open_loop_wheel_speed_targets(float left_mps, float right_mps);
+void set_wheel_speed_targets(float left_mps, float right_mps);
 #endif

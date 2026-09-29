@@ -8,6 +8,7 @@
 #include "navigation.h"
 #include "pure-pursuit.h"
 #include "vfh.h"
+#include "weight-detection.h"
 #include "weight-pickup.h"
 #include "odometry.h"
 #include "drivetrain.h"
@@ -15,34 +16,21 @@
 #include "math_utils.h"
 #include <Arduino.h>
 
-namespace // Keep variables and helper functions private to this file.
+namespace
 {
-    constexpr float kPi = 3.14159265f;
-    constexpr float kRecoveryHeadingOffsetRad = 1.5f;
-    constexpr float kObstacleTurnRateRadPerSec = 2.5f;
-    constexpr float kRecoveryRejectAngleRad = 1.5f * kPi;
-    constexpr float kRecoveryExitSpeedMps = 0.10f;
     constexpr float kTurnInPlaceSpeedScale = 0.750f;
     constexpr float kSlowFrontClearanceM = 0.35f;
     constexpr float kHardFrontClearanceM = 0.08f;
-    constexpr float kExplorationScanTurnRateRadPerSec = 0.5f;
-    constexpr float kWeightApproachSpeedMps = 0.08f;
     constexpr float kSteeringDirectionDeadbandRad = 0.05f;
     constexpr float kTurnInPlaceLinearDeadbandMps = 0.01f;
     constexpr float kTurnInPlaceTurnRateDeadbandRadPerSec = 0.01f;
     constexpr float kAvoidanceReplanDeflectionRad = 0.55f;
     constexpr uint8_t kAvoidanceReplanCycles = 8;
     constexpr uint8_t kAvoidanceReplanCooldownCycles = 20;
-    constexpr bool kHeadingHoldTestMode = false;
-    constexpr float kHeadingHoldTestSpeedMps = 0.1f;
+    constexpr float kScanResetDistanceM = 0.10f;
+    constexpr float kAvoidanceLookaheadM = 0.50f;
     float scan_start_x = 0.0f;
     float scan_start_y = 0.0f;
-
-    constexpr float kScanResetDistanceM = 0.10f;
-
-    // Virtual target distance used when following a VFH-selected bearing.
-    // Start with the same distance as the pure-pursuit lookahead.
-    constexpr float kAvoidanceLookaheadM = 0.50f;
 
     pose_t current_pose = {}; // Stores the latest EKF pose estimate
     velocity_command_t safe_command = {0.0f, 0.0f, 0.0f, true};
@@ -55,7 +43,6 @@ namespace // Keep variables and helper functions private to this file.
     uint8_t avoidance_replan_cycles = 0;
     uint8_t avoidance_replan_cooldown_cycles = 0;
     bool heading_hold_test_started = false;
-    float heading_hold_test_heading = 0.0f;
 
     constexpr float kScanTurnRateRadPerSec = 0.50f;
     constexpr uint32_t kScanTimeoutMs = 30000;
@@ -67,7 +54,6 @@ namespace // Keep variables and helper functions private to this file.
     constexpr uint32_t kReverseRetryPauseMs = 500;
     uint32_t reverse_recovery_started_ms = 0;
     uint32_t reverse_retry_started_ms = 0;
-    uint32_t last_motion_debug_ms = 0;
 
     bool scan_active = false;
     uint32_t scan_started_ms = 0;
@@ -106,13 +92,13 @@ namespace // Keep variables and helper functions private to this file.
         DrivetrainTelemetry telemetry = {};
         drivetrain_get_telemetry(&telemetry);
 
-        return telemetry.fault == DrivetrainFault::NONE &&
-            telemetry.left_measured_mps <= -kReverseMotionThresholdMps &&
+        return telemetry.fault == DrivetrainFault::NONE && telemetry.left_measured_mps <= -kReverseMotionThresholdMps &&
             telemetry.right_measured_mps <= -kReverseMotionThresholdMps;
     }
 
     velocity_command_t bounded_scan_command(const pose_t& pose)
     {
+        // Turns in place to try and find a way out.
         if (!scan_active)
         {
             scan_active = true;
@@ -121,9 +107,7 @@ namespace // Keep variables and helper functions private to this file.
             scan_start_x = pose.x;
             scan_start_y = pose.y;
 
-            scan_direction = last_steering_direction >= 0.0f
-                                 ? 1.0f
-                                 : -1.0f;
+            scan_direction = last_steering_direction >= 0.0f ? 1.0f : -1.0f;
         }
 
         if (reverse_recovery_active)
@@ -144,14 +128,14 @@ namespace // Keep variables and helper functions private to this file.
                 reverse_motion_confirmations >= kReverseMotionConfirmations)
             {
                 reverse_motion_confirmed = true;
-                Serial.println(
-                    "RECOVERY: reverse motion detected; continuing to 0.15 m");
+                Serial.println("RECOVERY: reverse motion detected; continuing to 0.15 m");
             }
 
             const float reverse_dx = pose.x - scan_start_x;
             const float reverse_dy = pose.y - scan_start_y;
-            if (reverse_motion_confirmed &&
-                reverse_dx * reverse_dx + reverse_dy * reverse_dy >=
+
+            // Wait until we see reverse motion before continuing.
+            if (reverse_motion_confirmed && reverse_dx * reverse_dx + reverse_dy * reverse_dy >=
                 kReverseRecoveryDistanceM * kReverseRecoveryDistanceM)
             {
                 reset_scan();
@@ -162,8 +146,8 @@ namespace // Keep variables and helper functions private to this file.
 
             return {pose.theta, kScanReverseSpeedMps, 0.0f, false};
         }
-
-        if (static_cast<uint32_t>(millis() - scan_started_ms) >=
+        // Reverse if the scaning fails.
+        if ((millis() - scan_started_ms) >=
             kScanTimeoutMs)
         {
             begin_reverse_recovery(pose);
@@ -197,6 +181,7 @@ namespace // Keep variables and helper functions private to this file.
 
     void update_avoidance_replan_tracking(bool avoidance_active)
     {
+        // Keep track of how often we replan to avoid rapid replans.
         if (avoidance_replan_cooldown_cycles > 0)
         {
             --avoidance_replan_cooldown_cycles;
@@ -231,13 +216,12 @@ namespace // Keep variables and helper functions private to this file.
 
     bool is_turn_in_place_command(const velocity_command_t& command)
     {
+        // Checks if command is turn in place command
         return fabsf(command.linear_speed) <= kTurnInPlaceLinearDeadbandMps &&
             fabsf(command.turn_rate) > kTurnInPlaceTurnRateDeadbandRadPerSec;
     }
 
-    velocity_command_t avoid_obstacles(const velocity_command_t& target,
-                                       const pose_t& pose,
-                                       bool following_path)
+    velocity_command_t avoid_obstacles(const velocity_command_t& target, const pose_t& pose)
     {
         // Bypass VFH if stop is commanded (prevents VFH trying to command movement)
         if (target.stop)
@@ -289,17 +273,14 @@ namespace // Keep variables and helper functions private to this file.
         // Slow down based on obstical avoidance deflection amount, larger VFH avoidance -> slower speed.
         // At 90 degree or more, turn in place instead of arc.
         const float speed_scale = fmaxf(0.0f, cosf(deflection));
-        const bool avoidance_active =
-            deflection >= kAvoidanceReplanDeflectionRad ||
-            forward_clearance < kSlowFrontClearanceM ||
-            speed_scale <= kTurnInPlaceSpeedScale;
+        const bool avoidance_active = deflection >= kAvoidanceReplanDeflectionRad || forward_clearance <
+            kSlowFrontClearanceM || speed_scale <= kTurnInPlaceSpeedScale;
         update_avoidance_replan_tracking(avoidance_active);
         safe.linear_speed *= speed_scale;
         if (forward_clearance < kSlowFrontClearanceM)
         {
-            const float clearance_scale =
-                (forward_clearance - kHardFrontClearanceM) /
-                (kSlowFrontClearanceM - kHardFrontClearanceM);
+            const float clearance_scale = (forward_clearance - kHardFrontClearanceM) / (kSlowFrontClearanceM -
+                kHardFrontClearanceM);
             safe.linear_speed *= fminf(1.0f, fmaxf(0.0f, clearance_scale));
         }
 
@@ -310,53 +291,29 @@ namespace // Keep variables and helper functions private to this file.
         }
         else
         {
-            // If VFH substantially changed the target bearing, generate
-            // curvature toward that new bearing.
+            // If VFH substantially changed the target heading, calculate curvature
             if (deflection > kSteeringDirectionDeadbandRad)
             {
-                const float curvature =
-                    2.0f * sinf(steering_relative) /
-                    kAvoidanceLookaheadM;
+                const float curvature = 2.0f * sinf(steering_relative) / kAvoidanceLookaheadM;
 
-                safe.turn_rate =
-                    safe.linear_speed * curvature;
+                safe.turn_rate = safe.linear_speed * curvature;
             }
             else
             {
-                // VFH accepted approximately the original direction.
-                // Keep pure pursuit's curvature when reducing speed.
-                const float speed_scale =
-                    fabsf(target.linear_speed) > 0.001f
-                        ? safe.linear_speed / target.linear_speed
-                        : 0.0f;
+                // Reduce speed if vfh deflection angle is small
+                const float speed_scale = fabsf(target.linear_speed) > 0.001f
+                                              ? safe.linear_speed / target.linear_speed
+                                              : 0.0f;
 
-                safe.turn_rate =
-                    target.turn_rate * speed_scale;
+                safe.turn_rate = target.turn_rate * speed_scale;
             }
 
             reset_recovery_turn_tracking();
         }
-        // A zero forward speed is still a valid rotate-in-place command.
+        // Zero forward still valid drivetrain command
         safe.stop = false;
 
         return safe;
-    }
-
-
-    velocity_command_t heading_hold_test_command(const pose_t& pose)
-    {
-        if (!heading_hold_test_started)
-        {
-            heading_hold_test_heading = pose.theta;
-            heading_hold_test_started = true;
-        }
-
-        return {
-            heading_hold_test_heading,
-            kHeadingHoldTestSpeedMps,
-            0.0f,
-            false
-        };
     }
 } // namespace
 
@@ -380,25 +337,20 @@ void autonomy_task()
 {
     // Slow autonomy loop -> advances mission state, updates path, follows it and filters output through local obstical avoidance.
 
-
     // Get lastest robot pose
     get_ekf_pose(&current_pose.x, &current_pose.y, &current_pose.theta);
 
     // Advance the mission state
     mission_task();
 
+    // Check states
     const DrivetrainFault drivetrain_fault = drivetrain_get_fault();
-    const bool recoverable_stall =
-        drivetrain_fault == DrivetrainFault::LEFT_STALLED ||
-        drivetrain_fault == DrivetrainFault::RIGHT_STALLED;
-    const bool mission_allows_recovery =
-        mission_should_explore() || mission_should_return_home();
+    const bool recoverable_stall = drivetrain_fault == DrivetrainFault::LEFT_STALLED || drivetrain_fault ==
+        DrivetrainFault::RIGHT_STALLED;
+    const bool mission_allows_recovery = mission_should_explore() || mission_should_return_home();
 
-    // Bound the whole recovery, including pauses and retries. If the robot is
-    // pinned against a wall, stop trying to reverse and let navigation choose
-    // a new plan instead of clearing and retrying the same stall forever.
-    if ((reverse_recovery_active || reverse_retry_pending) &&
-        static_cast<uint32_t>(millis() - reverse_recovery_started_ms) >=
+    // Replan if stuck against wall
+    if ((reverse_recovery_active || reverse_retry_pending) && (millis() - reverse_recovery_started_ms) >=
         kReverseRecoveryTimeoutMs)
     {
         motion_controller_stop();
@@ -413,14 +365,11 @@ void autonomy_task()
         return;
     }
 
-    // A latched stall zeros and rejects every wheel command. Clear it while
-    // stopped, then immediately replace the failed command with reverse.
+    // Reverse if stalled, clear fault
     if (recoverable_stall && mission_allows_recovery &&
         !reverse_recovery_active)
     {
-        if (reverse_retry_pending &&
-            static_cast<uint32_t>(millis() - reverse_retry_started_ms) <
-            kReverseRetryPauseMs)
+        if (reverse_retry_pending && millis() - reverse_retry_started_ms < kReverseRetryPauseMs)
         {
             safe_command = {current_pose.theta, 0.0f, 0.0f, true};
             return;
@@ -442,10 +391,8 @@ void autonomy_task()
         return;
     }
 
-    // If reverse itself stalls, pause at neutral before clearing the stall and
-    // trying again. Competition operation must not require physical access.
-    if (reverse_recovery_active &&
-        drivetrain_fault != DrivetrainFault::NONE)
+    // Either reverse the 150mm or timeout and continue.
+    if (reverse_recovery_active && drivetrain_fault != DrivetrainFault::NONE)
     {
         reverse_recovery_active = false;
         safe_command = {current_pose.theta, 0.0f, 0.0f, true};
@@ -469,23 +416,11 @@ void autonomy_task()
         return;
     }
 
-    // if (!check_navigation_progress(current_pose))
-    // {
-    //     safe_command = {
-    //         current_pose.theta,
-    //         0.0f,
-    //         0.0f,
-    //         true
-    //     };
-    //
-    //     return;
-    // }
-
-    if (kHeadingHoldTestMode)
+    // Pause to allow tof array to calibrate
+    if (weight_detection_requires_stop())
     {
-        safe_command = mission_should_stop()
-                           ? velocity_command_t{current_pose.theta, 0.0f, 0.0f, true}
-                           : heading_hold_test_command(current_pose);
+        reset_scan();
+        safe_command = {current_pose.theta, 0.0f, 0.0f, true};
         return;
     }
 
@@ -532,43 +467,16 @@ void autonomy_task()
     else
     {
         target = pure_pursuit_update(path, &current_pose);
-        safe_command = avoid_obstacles(
-            target, current_pose, path != nullptr);
+        safe_command = avoid_obstacles(target, current_pose);
     }
 
-    if (static_cast<uint32_t>(
-        millis() - last_motion_debug_ms) >= 500)
-    {
-        last_motion_debug_ms = millis();
-
-        // Serial.printf(
-        //     "CMD PP: stop=%u v=%.3f w=%.3f | "
-        //     "SAFE: stop=%u v=%.3f w=%.3f\n",
-        //     target.stop ? 1u : 0u,
-        //     target.linear_speed,
-        //     target.turn_rate,
-        //     safe_command.stop ? 1u : 0u,
-        //     safe_command.linear_speed,
-        //     safe_command.turn_rate);
-        // Serial.printf(
-        //     "MISSION state=%u | NAV state=%u path=%u "
-        //     "scan=%u reverse=%u steer=%.1f clearance=%.2f\n",
-        //     static_cast<unsigned>(mission_get_state()),
-        //     static_cast<unsigned>(navigation_get_status()),
-        //     navigation_has_path() ? 1u : 0u,
-        //     scan_active ? 1u : 0u,
-        //     reverse_recovery_active ? 1u : 0u,
-        //     vfh_get_steering_angle() * 180.0f / PI,
-        //     vfh_get_forward_clearance());
-    }
     // Override if mission state commands stop.
     if (mission_should_stop())
     {
         safe_command = {current_pose.theta, 0.0f, 0.0f, true};
     }
 
-    // Re-arm only after measured translation away from
-    // the position where this recovery attempt started.
+    // Re-arm only after measured translation away from the position where the recovery started
     if (scan_active &&
         !safe_command.stop &&
         safe_command.linear_speed > 0.02f)
@@ -576,8 +484,7 @@ void autonomy_task()
         const float dx = current_pose.x - scan_start_x;
         const float dy = current_pose.y - scan_start_y;
 
-        if (dx * dx + dy * dy >=
-            kScanResetDistanceM * kScanResetDistanceM)
+        if (dx * dx + dy * dy >= kScanResetDistanceM * kScanResetDistanceM)
         {
             reset_scan();
         }
@@ -586,8 +493,8 @@ void autonomy_task()
 
 void autonomy_motion_task()
 {
-    if (mission_get_state() == MISSION_STOPPED ||
-        mission_get_state() == MISSION_IDLE)
+    if (mission_get_state() == MISSION_STOPPED || mission_get_state() == MISSION_IDLE ||
+        weight_detection_requires_stop())
     {
         motion_controller_stop();
         return;

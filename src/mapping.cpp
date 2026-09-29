@@ -9,7 +9,7 @@
 #include "odometry.h"
 #include "ToF-Sensors.h"
 
-
+// Module inserts tof array scans into a log odds occupancy grid.
 namespace
 {
     void lidar_to_robot(float r, float theta, float* xr, float* yr)

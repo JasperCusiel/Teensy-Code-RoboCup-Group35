@@ -52,11 +52,12 @@ namespace
 
     float goal_tolerance()
     {
+        // Tighter tolerance if we are trying to go home
         if (active_goal.type == NAV_GOAL_BASE)
         {
             return 0.12f;
         }
-
+        // Relax tolerance if we are just doing coverage
         return active_goal.type == NAV_GOAL_COVERAGE
                    ? kCoverageGoalToleranceM
                    : kDefaultGoalToleranceM;
@@ -83,6 +84,7 @@ namespace
 
     bool active_goal_can_be_rejected()
     {
+        // We don't want to reject return home goal
         return active_goal.type == NAV_GOAL_FRONTIER ||
             active_goal.type == NAV_GOAL_COVERAGE;
     }
@@ -161,9 +163,7 @@ namespace
             active_goal = {NAV_GOAL_NONE, {0, 0}};
             active_path.length = 0;
             reset_replan_budget();
-            // An unavailable coverage target may become usable as the scan
-            // adds map evidence. Only report completion after every coverage
-            // goal has actually been advanced or rejected.
+            // An unavailable coverage goal may become reachable as we move, only reject after so many fails.
             status = coverage_planner_complete()
                          ? NAV_STATUS_EXPLORATION_COMPLETE
                          : NAV_STATUS_IDLE;
@@ -187,6 +187,7 @@ namespace
 
     bool plan_from(const grid_point_t& start)
     {
+        // Plan a path with A star
         status = NAV_STATUS_PLANNING;
 
         active_path.length = 0;
@@ -200,53 +201,15 @@ namespace
             active_goal.cell.y,
             &active_path);
 
-        status = found
-                     ? NAV_STATUS_FOLLOWING_PATH
-                     : NAV_STATUS_PATH_FAILED;
+        status = found ? NAV_STATUS_FOLLOWING_PATH : NAV_STATUS_PATH_FAILED;
 
-        // Rate-limit diagnostics to avoid flooding serial output.
-        static uint32_t last_report_ms = 0;
-        const uint32_t now = millis();
-
-        if (static_cast<uint32_t>(now - last_report_ms) >= 500)
-        {
-            last_report_ms = now;
-
-            Serial.printf(
-                "PLAN %s: start=%d,%d state=%u clear=%u "
-                "goal=%d,%d type=%u state=%u clear=%u "
-                "length=%u escape=%u\n",
-                found ? "OK" : "FAIL",
-
-                start.x,
-                start.y,
-                (unsigned)map_get_state(start.x, start.y),
-                astar_has_obstacle_clearance(
-                    start.x, start.y)
-                    ? 1u
-                    : 0u,
-
-                active_goal.cell.x,
-                active_goal.cell.y,
-                (unsigned)active_goal.type,
-                (unsigned)map_get_state(
-                    active_goal.cell.x,
-                    active_goal.cell.y),
-                astar_has_obstacle_clearance(
-                    active_goal.cell.x,
-                    active_goal.cell.y)
-                    ? 1u
-                    : 0u,
-
-                (unsigned)active_path.length,
-                (unsigned)active_path.escape_prefix_length);
-        }
 
         return found;
     }
 
     uint16_t closest_path_index(const grid_point_t& robot_cell)
     {
+        // To get look ahead point
         if (active_path.length == 0)
         {
             return 0;
@@ -273,7 +236,7 @@ namespace
 
     bool path_half_complete(const grid_point_t& robot_cell)
     {
-        // Checks if we are half way through the path or not.
+        // Checks if we are half way through the path or not. Used to replan when half way
         if (active_path.length < 2)
         {
             return false;
@@ -285,6 +248,7 @@ namespace
 
     bool path_blocked_ahead(const grid_point_t& robot_cell)
     {
+        // Check if path becomes blocked along the planned path as we move, replan if route it blocked.
         if (active_path.length == 0)
         {
             return false;
@@ -310,8 +274,7 @@ namespace
             return false;
         }
 
-        uint16_t end_index =
-            closest_index + kPathValidationAheadCells + 1;
+        uint16_t end_index = closest_index + kPathValidationAheadCells + 1;
 
         if (end_index > active_path.length)
         {
@@ -322,7 +285,6 @@ namespace
         {
             const grid_point_t& point = active_path.points[i];
 
-            // Guard before accessing the occupancy array.
             if (point.x < 0 || point.x >= MAP_WIDTH ||
                 point.y < 0 || point.y >= MAP_HEIGHT)
             {
@@ -343,8 +305,7 @@ namespace
 
             if (is_escape_point)
             {
-                // Escape relaxes inflated clearance ONLY.
-                // It does not permit travel through unknown cells.
+                // Escape relaxes clearance to try to escape
                 if (state != FREE)
                 {
                     return true;
@@ -353,8 +314,6 @@ namespace
                 continue;
             }
 
-            // Preserve the existing normal-path goal exception.
-            // Goal occupancy/clearance policy is a separate fix.
             if (cells_equal(point, active_goal.cell))
             {
                 continue;
@@ -439,9 +398,7 @@ void navigation_task()
         }
     }
 
-    // Frontier discovery is useful early in the round, but must not consume
-    // the full two-minute run. Move to deterministic lawnmower coverage after
-    // the initial exploration window, even if a frontier is still active.
+    // Use frontier to start, then go to coverage during round
     if (mission_should_explore() && !coverage_planner_started() &&
         mission_should_use_coverage())
     {
@@ -500,6 +457,7 @@ void navigation_task()
         }
     }
 
+    // Replan if path becomes blocked
     if (active_goal.type != NAV_GOAL_NONE &&
         active_path.length > 0 &&
         path_blocked_ahead(robot_cell))
@@ -563,6 +521,7 @@ void navigation_clear_goal()
 }
 
 
+// Getter and helper functions.
 bool navigation_has_goal() { return active_goal.type != NAV_GOAL_NONE; }
 
 navigation_goal_t navigation_get_goal() { return active_goal; }
@@ -584,6 +543,7 @@ bool navigation_exploration_complete()
 bool navigation_path_failed() { return status == NAV_STATUS_PATH_FAILED; }
 
 navigation_status_t navigation_get_status() { return status; }
+
 
 void navigation_request_replan()
 {

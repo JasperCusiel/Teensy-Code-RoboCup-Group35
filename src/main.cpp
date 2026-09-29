@@ -30,13 +30,9 @@
 #define HZ_TO_US(x) (1000000UL / (x)) // convert hz to micro seconds
 #define NUM_TASKS (sizeof(tasks) / sizeof(tasks[0]))
 
-
 #define GO_BTN A9
 
-uint32_t last_time_1 = micros();
-
-float state[3];
-
+// All tasks for scheduler to run
 task_t tasks[] = {
     {imu_task, HZ_TO_US(95), 0},
     {odometry_update, HZ_TO_US(95), 0},

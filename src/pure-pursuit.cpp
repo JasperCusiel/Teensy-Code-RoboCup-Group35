@@ -103,8 +103,6 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
         pure_pursuit_path_complete(path, robot_pose))
     {
         turning_in_place = false;
-        // Serial.println(
-        //     "path == nullptr || robot_pose == nullptr || path->length == 0 || pure_pursuit_path_complete(path, robot_pose)");
         return command;
     }
 
@@ -125,8 +123,7 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
     }
 
     // Once turning in place, remain in this mode until we are
-    // well aligned with the path. This hysteresis prevents rapid
-    // switching between tracking and turn-in-place.
+    // well aligned with the path. Prevents rapid swithcing between turn in place and tracking
     if (turning_in_place)
     {
         if (fabsf(heading_error) <= kTurnInPlaceExitErrorRad)
@@ -136,18 +133,10 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
         else
         {
             command.linear_speed = 0.0f;
-
-            command.turn_rate =
-                kTurnInPlaceKp * heading_error;
-
-            command.turn_rate = fmaxf(
-                -kMaxTurnInPlaceRateRadPerSec,
-                fminf(
-                    kMaxTurnInPlaceRateRadPerSec,
-                    command.turn_rate));
-
+            command.turn_rate = kTurnInPlaceKp * heading_error;
+            command.turn_rate = fmaxf(-kMaxTurnInPlaceRateRadPerSec,
+                                      fminf(kMaxTurnInPlaceRateRadPerSec, command.turn_rate));
             command.stop = false;
-            // Serial.println("else");
             return command;
         }
     }
@@ -158,7 +147,6 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
     // Protect against division by zero.
     if (lookahead_distance < 0.001f)
     {
-        // Serial.println("lookahead_distance < 0.001f");
         return command;
     }
 
@@ -166,35 +154,12 @@ velocity_command_t pure_pursuit_update(const path_t* path, const pose_t* robot_p
     const float alignment = fmaxf(0.0f, cosf(heading_error));
 
     command.linear_speed = fmaxf(kMinimumTrackingSpeedMps, kNominalSpeedMps * alignment);
-
-    // Pure Pursuit curvature:
-    //
-    //             2 sin(alpha)
-    // curvature = ------------
-    //                  Ld
-    //
     const float curvature = 2.0f * sinf(heading_error) / lookahead_distance;
-
-    // Convert curvature into angular velocity:
-    //
-    // omega = v * curvature
-    //
     command.turn_rate = command.linear_speed * curvature;
 
     // Limit angular velocity while tracking.
     command.turn_rate = fmaxf(-kMaxTrackingTurnRateRadPerSec, fminf(kMaxTrackingTurnRateRadPerSec, command.turn_rate));
-
     command.stop = false;
-
-    // Serial.printf(
-    //     "PP: idx=%d heading=%.1f err=%.1f v=%.3f w=%.3f\n",
-    //     lookahead_index,
-    //     command.heading * 180.0f / PI,
-    //     heading_error * 180.0f / PI,
-    //     command.linear_speed,
-    //     command.turn_rate
-    // );
-
     return command;
 }
 

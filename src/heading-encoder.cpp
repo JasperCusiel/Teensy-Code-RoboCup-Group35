@@ -6,6 +6,8 @@
 #include "limit-switch.h"
 #include <Arduino.h>
 
+// Sets the inital pose of the robot on startup, arrow points foward
+
 // Define input pins for the 8421 encoder bits.
 static const int pinBit1 = SX1509_AIO13; // 2^0 (1)
 static const int pinBit2 = SX1509_AIO12; // 2^1 (2)

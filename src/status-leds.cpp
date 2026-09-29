@@ -4,11 +4,11 @@
 
 #include <Arduino.h>
 #include <FastLED.h>
-
-#include "navigation.h"
 #include "coverage-planner.h"
 
 #define STATUS_LED_DATA_PIN A6
+
+// Module displays the FSM states on the rear LED panel
 
 namespace
 {

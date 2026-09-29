@@ -44,6 +44,7 @@ static bool ir_clear_timer_started = false;
 
 void weight_pickup_state_update()
 {
+    // Pickup FSM
     if (mission_get_state() == MISSION_STOPPED ||
         mission_get_state() == MISSION_IDLE)
     {
@@ -85,9 +86,7 @@ void weight_pickup_state_update()
         {
             ir_clear_timer_started = false;
 
-            // Catch weights reached accidentally while navigating. Disarm
-            // until the sensor has been clear long enough so a carried weight
-            // cannot repeatedly start the pickup sequence.
+            // Catch weights reached accidentally while navigating
             if (ir_pickup_armed && mission_should_explore())
             {
                 ir_pickup_armed = false;
@@ -105,7 +104,7 @@ void weight_pickup_state_update()
         }
         if (millis() - aligning_start_time > ALIGNING_TIMEOUT_MS)
         {
-            //timeout
+            // timeout
             motion_controller_override_drive(0.0f, 0.0f);
             mission_report_pickup_complete(false);
             current_state = PICKUP_STATUS_IDLE;

@@ -3,6 +3,7 @@
 //
 #include "math_utils.h"
 #include <wiring.h>
+// Helper of common functions used in calcs
 
 // Normalize heading angles so difference is always smallest rotation.
 float wrap_angle_rad(float angle_rad)

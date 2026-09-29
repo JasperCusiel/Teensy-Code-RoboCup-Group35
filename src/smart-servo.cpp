@@ -49,14 +49,12 @@ static bool read_servo_status(size_t servo_index, HerkulexStatusError& status_er
 
     status_error = static_cast<HerkulexStatusError>(resp.data[0]);
     status_detail = static_cast<HerkulexStatusDetail>(resp.data[1]);
-    // Serial.printf("status: %d\n", status_error);
-    // Serial.printf("detail: %d\n", status_detail);
-
     return true;
 }
 
 static void restore_servo_target(size_t servo_index)
 {
+    // Restores target position if servo is restarted
     if (servo_index == 0)
     {
         servos[servo_index]->setPosition(servo_down[servo_index] ? BACK_SERVO_DOWN_POS : BACK_SERVO_UP_POS,
@@ -71,6 +69,8 @@ static void restore_servo_target(size_t servo_index)
 
 bool smart_servo_init()
 {
+    // Start servos and set thier position and config
+
     SERIAL_BUS.begin(SERIAL_BAUD);
     uint8_t num_errors = 0;
 
@@ -105,6 +105,7 @@ bool smart_servo_init()
     return num_errors == 0;
 }
 
+// Setter functions
 void set_front_servo_up()
 {
     servo_b.setPosition(FRONT_SERVO_UP_POS, SERVO_MOVE_PLAYTIME);
@@ -147,6 +148,7 @@ bool is_back_servo_in_position()
 
 void smart_servo_monitor_task()
 {
+    // Checks servos are still active on bus and restart and set position if they error (when weight jams mechanisim)
     HerkulexStatusError status_error;
     HerkulexStatusDetail status_detail;
 

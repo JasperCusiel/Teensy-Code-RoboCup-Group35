@@ -213,9 +213,6 @@ bool frontier_find_largest_goal_excluding(int robot_x, int robot_y,
 
             // Find the largest frontier, as it represents the largest boundary of unexplored space.
             // If equal, prefer the closer frontier.
-            // At 10 cells/m this is 0.60 m.
-            // Keep this larger than navigation's 0.50 m goal tolerance,
-            // with allowance for the robot's position within its map cell.
             constexpr int kMinimumGoalDistanceCells = 6;
 
             int target_index = -1;

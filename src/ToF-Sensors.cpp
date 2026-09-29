@@ -23,6 +23,8 @@ const uint8_t x_shut_pins[NumOfTOFSensors] = {5, 4, 3, 2, 1, 0}; // Ordering of 
 
 // Stores scan data
 static lidar_scan scan;
+static uint32_t scan_sequence = 0;
+static uint32_t scan_updated_ms = 0;
 
 // ----- VL53L1X variables -----
 constexpr uint16_t Dev_init = 0x29; // Default I2C address is 0x29
@@ -108,6 +110,9 @@ namespace
 bool tof_init()
 {
     // Start the tof array.
+
+    scan_sequence = 0;
+    scan_updated_ms = 0;
 
     // Turn off all sensors.
     io.begin(SX1509_ADDRESS);
@@ -267,8 +272,7 @@ void get_tof_reading()
 
     static uint32_t started_ms[NumOfTOFSensors] = {};
 
-    // Latch communication/time-out faults rather than restarting
-    // the entire sensor array inside the running scheduler.
+    // Latch communication/time-out faults rather than restarting the entire sensor array inside the running scheduler.
     auto fail = [&]()
     {
         phase = Phase::FAULT;
@@ -289,8 +293,7 @@ void get_tof_reading()
     if (phase == Phase::CONFIGURE)
     {
         // Establish which ROI will produce the next measurement.
-        // Stop first so an old ready result is not labelled as
-        // belonging to the newly selected ROI.
+        // Stop first so an old ready result is not labelled as belonging to the newly selected ROI.
         if (VL53L1X_StopRanging(device) != 0 ||
             VL53L1X_ClearInterrupt(device) != 0 ||
             VL53L1_WrByte(
@@ -316,7 +319,7 @@ void get_tof_reading()
         return;
     }
 
-    // Check once. If measurement is pending, let other tasks run.
+    // Check once if measurement is pending, let other tasks run
     uint8_t ready = 0;
 
     if (VL53L1X_CheckForDataReady(device, &ready) != 0)
@@ -327,9 +330,7 @@ void get_tof_reading()
 
     if (!ready)
     {
-        if (static_cast<uint32_t>(
-                millis() - started_ms[sensor_index]) >=
-            kMeasurementTimeoutMs)
+        if ((millis() - started_ms[sensor_index]) >= kMeasurementTimeoutMs)
         {
             fail();
         }
@@ -350,11 +351,8 @@ void get_tof_reading()
         return;
     }
 
-    const uint16_t index =
-        sensor_index * NumOfZonesPerSensor + zone_index;
+    const uint16_t index = sensor_index * NumOfZonesPerSensor + zone_index;
 
-    // Retains the existing range-status interpretation.
-    // Validity-aware mapping/VFH remains a separate change.
     if (range_status == 0 || range_status == 7)
     {
         int32_t corrected_mm = 0;
@@ -401,13 +399,27 @@ void get_tof_reading()
             scan.ranges[i] = LidarDistance[i] / 1000.0f;
         }
 
+        ++scan_sequence;
+        scan_updated_ms = millis();
+
         zone_index = 0;
     }
 
     phase = Phase::CONFIGURE;
 }
 
+// Getter functions.
 lidar_scan* get_scan()
 {
     return &scan;
+}
+
+uint32_t tof_get_scan_sequence()
+{
+    return scan_sequence;
+}
+
+uint32_t tof_get_scan_updated_ms()
+{
+    return scan_updated_ms;
 }

@@ -72,12 +72,6 @@ namespace
                      2.0f * usable_speed / kTrackWidthM);
     }
 
-    bool is_direct_turn_rate_command(const velocity_command_t* command)
-    {
-        return fabsf(command->linear_speed) <= kTurnInPlaceLinearDeadbandMps &&
-            fabsf(command->turn_rate) > kTurnRateDeadbandRadPerSec;
-    }
-
     void reset_pid()
     {
         heading_integral = 0.0f;
@@ -116,7 +110,7 @@ void motion_controller_stop()
     left_target = 0.0f;
     right_target = 0.0f;
     reset_pid();
-    set_open_loop_wheel_speed_targets(0.0f, 0.0f);
+    set_wheel_speed_targets(0.0f, 0.0f);
 }
 
 void motion_controller_update(const pose_t* pose, const velocity_command_t* command)
@@ -152,7 +146,7 @@ void motion_controller_update(const pose_t* pose, const velocity_command_t* comm
 
     motion_controller_set_wheel_targets(left_speed, right_speed);
 
-    set_open_loop_wheel_speed_targets(left_target, right_target);
+    set_wheel_speed_targets(left_target, right_target);
 }
 
 void motion_controller_set_enabled(bool new_enabled)
@@ -273,7 +267,7 @@ void motion_controller_override_drive(float speed_mps, float turn_rate_rad_s)
         override_heading = theta; // re-capture so the next drive holds this heading
         reset_pid();
         motion_controller_set_wheel_targets(0.0f, 0.0f);
-        set_open_loop_wheel_speed_targets(0.0f, 0.0f);
+        set_wheel_speed_targets(0.0f, 0.0f);
         return;
     }
 
@@ -309,5 +303,5 @@ void motion_controller_override_drive(float speed_mps, float turn_rate_rad_s)
 
     motion_controller_set_wheel_targets(speed_mps - 0.5f * kTrackWidthM * turn,
                                         speed_mps + 0.5f * kTrackWidthM * turn);
-    set_open_loop_wheel_speed_targets(left_target, right_target);
+    set_wheel_speed_targets(left_target, right_target);
 }

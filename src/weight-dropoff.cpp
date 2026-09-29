@@ -19,12 +19,12 @@ namespace
     constexpr uint32_t kAlignTimeoutMs = 15000;
     constexpr uint32_t kAlignStableMs = 300;
     constexpr float kDockReverseSpeedMps = -0.1f;
-    constexpr uint32_t kDockReverseDurationMs = 3000; // Tune from actual staging distance.
+    constexpr uint32_t kDockReverseDurationMs = 3000; // How long to reverse against wall for
     constexpr uint32_t kDockSettleMs = 300;
     constexpr uint32_t kLowerTimeoutMs = 15000;
     constexpr float kUnloadSpeedMps = 0.07f;
     constexpr uint32_t kUnloadDurationMs = 5000; // Preserves existing forward unloading.
-    constexpr int kDockMaximumPwm = 255; // Initial test cap; must be calibrated under load.
+    constexpr int kDockMaximumPwm = 255;
 
     weight_dropoff_state_t state = DROPOFF_STATUS_IDLE;
     uint32_t entered_ms = 0, aligned_since_ms = 0;
@@ -38,7 +38,6 @@ namespace
 
     void release_drive()
     {
-        // release only affects our ownership, never pickup's.
         motion_controller_release_override(MotionOverrideOwner::DROPOFF);
         drivetrain_set_output_limit(255);
     }
@@ -58,6 +57,7 @@ namespace
 
 void weight_dropoff_state_update()
 {
+    // Dropoff sequence FSM
     if (mission_get_state() != MISSION_COMPLETE)
     {
         if (state != DROPOFF_STATUS_IDLE)
@@ -120,12 +120,11 @@ void weight_dropoff_state_update()
                     aligned = true;
                     aligned_since_ms = now;
                 }
-                if (static_cast<uint32_t>(now - aligned_since_ms) >= kAlignStableMs)
+                if (now - aligned_since_ms >= kAlignStableMs)
                 {
                     drivetrain_set_output_limit(kDockMaximumPwm);
                     motion_controller_set_override_heading(kDockHeadingRad);
                     enter(DROPOFF_STATUS_REVERSE);
-                    // Timer starts with the first reverse command, not one task tick before it.
                     motion_controller_override_drive(kDockReverseSpeedMps, 0.0f);
                     Serial.println("DOCK: timed reverse");
                 }

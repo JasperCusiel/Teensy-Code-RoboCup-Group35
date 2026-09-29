@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <vfh.h>
 
-
+// This module implements VFH obstical avoidance using the front tof array
 VFH vfh;
 
 namespace
@@ -48,11 +48,9 @@ void vfh_init()
     vfh.forward_clearance = MAX_RANGE;
 }
 
-void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector,
-                         float weight, float range)
+void add_histogram_value(float vfh_histogram[NUM_SECTORS], int sector, float weight, float range)
 {
-    int spread = (int)ceilf(
-        atan2f(ROBOT_CLEARANCE * VFH_INFLATION_SCALE, range) / SECTOR_WIDTH);
+    int spread = (int)ceilf(atan2f(ROBOT_CLEARANCE * VFH_INFLATION_SCALE, range) / SECTOR_WIDTH);
     for (int i = -spread; i <= spread; i++)
     {
         int s = sector + i;
@@ -116,6 +114,7 @@ void threshold_histogram()
 
 float vfh_get_best_direction(float target_angle)
 {
+    // Chooses target steering direction
     float best_angle = NAN;
     float best_cost = 1e9;
     const float target = clamp_angle_to_fov(target_angle);
@@ -154,6 +153,7 @@ void compute_vfh()
     vfh.steering_angle = vfh_get_best_direction(vfh.target_angle);
 }
 
+// Getter functions
 float* vfh_get_histogram()
 {
     return vfh.histogram;

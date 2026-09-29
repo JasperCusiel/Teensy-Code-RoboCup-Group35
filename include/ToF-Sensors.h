@@ -23,6 +23,9 @@ void PlotPolarData(uint8_t sensor_num, uint8_t current_zone,
 void get_ToFCalibration();
 void get_tof_reading();
 lidar_scan* get_scan();
+// Incremented only when all sensors/zones have produced a complete scan.
+uint32_t tof_get_scan_sequence();
+uint32_t tof_get_scan_updated_ms();
 
 
 #endif

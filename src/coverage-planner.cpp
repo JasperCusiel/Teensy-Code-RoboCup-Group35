@@ -12,7 +12,7 @@ namespace
 {
     constexpr int kSurveySpacingCells = 6; // 0.6 m at the current map resolution.
     constexpr int kCoverageMarginCells = 3; // Keep survey points away from arena edges.
-    constexpr int kStartY = 1;
+    constexpr int kStartY = 1; // To avoid going in other robot base
     constexpr int kCandidateClearanceCells = 3; // Reject cells close to mapped obstacles.
     constexpr uint16_t kMaxCoverageGoals = 128;
 
@@ -23,11 +23,13 @@ namespace
 
     bool in_map(int x, int y)
     {
+        // Check cell is in map.
         return x >= 0 && y >= 0 && x < MAP_WIDTH && y < MAP_HEIGHT;
     }
 
     bool cell_has_clearance(int x, int y)
     {
+        // Check there is clearance around the target cell.
         if (!in_map(x, y) || map_get_state(x, y) != FREE)
         {
             return false;
@@ -45,6 +47,7 @@ namespace
 
                 const int nx = x + dx;
                 const int ny = y + dy;
+                // Check for occupancy
                 if (!in_map(nx, ny) || map_get_state(nx, ny) == OCCUPIED)
                 {
                     return false;
@@ -57,6 +60,7 @@ namespace
 
     void append_goal(int x, int y)
     {
+        // Add goal if in map and less than max number of goal points.
         if (goal_count >= kMaxCoverageGoals || !in_map(x, y))
         {
             return;
@@ -67,31 +71,26 @@ namespace
 
     void build_lawnmower_goals()
     {
+        // Links togeather points to follow lawn mower style grid.
         goal_count = 0;
         current_goal = 0;
 
         bool left_to_right = true;
 
-        // Home is at the low-Y end of the arena. Begin at the opposite end so
-        // the robot works back toward home as the round progresses.
-        for (int y = MAP_HEIGHT - 1 - kCoverageMarginCells;
-             y >= kStartY + kCoverageMarginCells;
-             y -= kSurveySpacingCells)
+        // Home is at the low-Y end of the arena. Begin at the opposite end so the robot works back toward home since we are likely to have not seen the other end.
+        for (int y = MAP_HEIGHT - 1 - kCoverageMarginCells; y >= kStartY + kCoverageMarginCells; y -=
+             kSurveySpacingCells)
         {
             if (left_to_right)
             {
-                for (int x = kCoverageMarginCells;
-                     x < MAP_WIDTH - kCoverageMarginCells;
-                     x += kSurveySpacingCells)
+                for (int x = kCoverageMarginCells; x < MAP_WIDTH - kCoverageMarginCells; x += kSurveySpacingCells)
                 {
                     append_goal(x, y);
                 }
             }
             else
             {
-                for (int x = MAP_WIDTH - 1 - kCoverageMarginCells;
-                     x >= kCoverageMarginCells;
-                     x -= kSurveySpacingCells)
+                for (int x = MAP_WIDTH - 1 - kCoverageMarginCells; x >= kCoverageMarginCells; x -= kSurveySpacingCells)
                 {
                     append_goal(x, y);
                 }
@@ -124,6 +123,7 @@ bool coverage_planner_started() { return started; }
 
 bool coverage_planner_get_goal(grid_point_t* goal)
 {
+    // Gets the next goal point, checking if it is possible to navigate to, if not move to next grid point.
     if (goal == nullptr || !started)
     {
         return false;
@@ -134,26 +134,19 @@ bool coverage_planner_get_goal(grid_point_t* goal)
 
     grid_point_t robot_cell = {};
 
-    if (!world_to_map(
-        pose.x, pose.y,
-        &robot_cell.x, &robot_cell.y))
+    if (!world_to_map(pose.x, pose.y, &robot_cell.x, &robot_cell.y))
     {
         return false;
     }
 
     bool reachable[MAP_WIDTH][MAP_HEIGHT] = {};
 
-    if (!astar_build_reachable_mask(
-        robot_cell.x,
-        robot_cell.y,
-        reachable))
+    if (!astar_build_reachable_mask(robot_cell.x, robot_cell.y, reachable))
     {
         return false;
     }
 
-    for (uint16_t candidate_index = current_goal;
-         candidate_index < goal_count;
-         ++candidate_index)
+    for (uint16_t candidate_index = current_goal; candidate_index < goal_count; ++candidate_index)
     {
         const grid_point_t candidate = goals[candidate_index];
 

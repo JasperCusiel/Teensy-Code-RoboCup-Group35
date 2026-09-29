@@ -4,24 +4,22 @@
 #include <Servo.h>
 #include <math.h>
 
+// Modules handles the interface to the physical hardware, takes target wheel speeds and converts them to PPM signals for drivers
+
 namespace
 {
     constexpr uint8_t kLeftPwmPin = 28, kLeftENCA = 30, kLeftENCB = 31;
     constexpr uint8_t kRightPwmPin = 1, kRightENCA = 2, kRightENCB = 3;
-    constexpr float kEncoderCpr = 3540.0f; // Actual counts per WHEEL revolution; no extra x4.
+    constexpr float kEncoderCpr = 3540.0f;
     constexpr float kWheelDiameterM = 0.075f;
     constexpr float kMetresPerCount = 3.14159265358979323846f * kWheelDiameterM / kEncoderCpr;
     constexpr int kStopUs = 1500, kPulseSpanUs = 450;
     constexpr float kMaxPwm = 255.0f;
     float output_limit_pwm = kMaxPwm;
-
-    // Preserve the existing motor directions. Encoder polarity must be checked separately.
     constexpr bool kLeftMotorInverted = true, kRightMotorInverted = false;
     constexpr bool kLeftEncoderInverted = false, kRightEncoderInverted = false;
 
-    // STARTING VALUES ONLY; these have not been tuned on the robot.
-    // kV units: command counts per (m/s). 850 assumes 255 corresponds to 0.30 m/s.
-    // Replace kV and kS with measured running feed-forward for each wheel/direction.
+    // Varying drivetrain friction, separate tuning for each motor
     struct Tuning
     {
         float kSForward, kSReverse, kVForward, kVReverse, kP, kI;
@@ -41,6 +39,8 @@ namespace
     constexpr uint32_t kStallUs = 3000000;
     constexpr uint32_t kWrongDirectionUs = 250000;
 
+
+    // PI control for each motor to ensure motors turn at requested speeds.
     Servo left_driver, right_driver;
     Encoder left_encoder(kLeftENCA, kLeftENCB);
     Encoder right_encoder(kRightENCA, kRightENCB);
@@ -59,6 +59,7 @@ namespace
     bool sampled = false;
     uint32_t previous_us = 0, last_interval_us = 0, max_interval_us = 0;
 
+    // Helper functions
     float clampf(float x, float lo, float hi) { return fminf(hi, fmaxf(lo, x)); }
 
     float approach(float actual, float target, float step)
@@ -96,7 +97,7 @@ namespace
 
     void measure(Wheel& w, int32_t count, bool inverted, float dt)
     {
-        // Unsigned subtraction defines counter wrap; widen before interpreting signed difference.
+        // Measure wheel speed and apply filter to smooth.
         const uint32_t bits = static_cast<uint32_t>(count) - static_cast<uint32_t>(w.count);
         const int64_t delta = bits <= 0x7fffffffU
                                   ? static_cast<int64_t>(bits)
@@ -107,9 +108,10 @@ namespace
         w.measured += alpha * (speed - w.measured);
     }
 
-    void control(Wheel& w, const Tuning& t, float dt, uint32_t dt_us, uint32_t now,
-                 DrivetrainFault stall_fault, DrivetrainFault direction_fault)
+    void control(Wheel& w, const Tuning& t, float dt, uint32_t dt_us, uint32_t now, DrivetrainFault stall_fault,
+                 DrivetrainFault direction_fault)
     {
+        // Apply the actual requested speed with the tuning values for the specific wheel to be driven.
         if (w.requested == 0)
         {
             reset_control(w);
@@ -126,7 +128,7 @@ namespace
         if (w.reversing)
         {
             reset_control(w);
-            if (static_cast<uint32_t>(now - w.reverse_start_us) < kReverseNeutralUs ||
+            if ((now - w.reverse_start_us) < kReverseNeutralUs ||
                 fabsf(w.measured) > kReversalStoppedMps)
                 return;
             w.reversing = false;
@@ -147,6 +149,7 @@ namespace
         const float slew_high = fminf(high, w.output + kPwmSlewPerSec * dt);
         const float candidate_integral = clampf(w.integral + t.kI * error * dt, -kMaxPwm, kMaxPwm);
         const float candidate = feedforward + t.kP * error + candidate_integral;
+
         // Conditional integration accounts for both output saturation and slew limiting.
         if ((candidate >= slew_low && candidate <= slew_high) ||
             (candidate > slew_high && error < 0) || (candidate < slew_low && error > 0))
@@ -154,7 +157,7 @@ namespace
             w.integral = candidate_integral;
         }
         w.output = clampf(feedforward + t.kP * error + w.integral, slew_low, slew_high);
-
+        // Check for stalls and incorrect directions.
         if (fabsf(w.reference) > 0.03f && fabsf(w.output) > 180.0f && fabsf(w.measured) < 0.005f)
             w.stalled_us += dt_us;
         else w.stalled_us = 0;
@@ -168,6 +171,7 @@ namespace
 
 void drivetrain_init()
 {
+    // Setup
     left_driver.attach(kLeftPwmPin, kStopUs - kPulseSpanUs, kStopUs + kPulseSpanUs);
     right_driver.attach(kRightPwmPin, kStopUs - kPulseSpanUs, kStopUs + kPulseSpanUs);
     drivetrain_stop();
@@ -192,19 +196,6 @@ void drivetrain_clear_fault()
 
 DrivetrainFault drivetrain_get_fault() { return fault; }
 
-// void drivetrain_debug_task()
-// {
-//     DrivetrainTelemetry t;
-//     drivetrain_get_telemetry(&t);
-//
-//     Serial.printf(
-//         "L ref=%.3f vel=%.3f pwm=%d | R ref=%.3f vel=%.3f pwm=%d | dt=%lu max=%lu fault=%u\n",
-//         t.left_ramped_mps, t.left_measured_mps, (int)t.left_pwm,
-//         t.right_ramped_mps, t.right_measured_mps, (int)t.right_pwm,
-//         (unsigned long)t.last_interval_us,
-//         (unsigned long)t.max_interval_us,
-//         (unsigned)t.fault);
-// }
 void drivetrain_debug_task()
 {
     Serial.printf(
@@ -226,7 +217,7 @@ void drivetrain_debug_task()
         static_cast<unsigned long>(max_interval_us));
 }
 
-void set_open_loop_wheel_speed_targets(float l, float r)
+void set_wheel_speed_targets(float l, float r)
 {
     if (!isfinite(l) || !isfinite(r))
     {
