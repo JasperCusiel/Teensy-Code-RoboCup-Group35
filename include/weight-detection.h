@@ -15,9 +15,6 @@ void draw_depth_data(U8G2& u8g2);
 void fill_calibration_matrix();
 bool detect_weight();
 void weight_detection_task();
-static bool is_active_cell(int x, int y);
-static bool is_exact_2x2(int x, int y);
-static bool is_exact_2x3(int x, int y);
 
 
 #endif // ROBOCUP_WEIGHT_DETECTION_H

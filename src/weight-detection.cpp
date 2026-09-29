@@ -6,6 +6,7 @@
 #include "ToF-Sensors.h"
 #include "button.h"
 #include "mission.h"
+#include "navigation.h"
 #include <math.h>
 
 
@@ -118,6 +119,15 @@ void weight_detection_task()
     }
     filter();
     wall_detected = tof_array_sees_wall();
+
+    if (wall_detected){
+        weight_detected = false;
+        weight_type = WEIGHT_NONE;
+        navigation_clear_goal();
+        navigation_request_replan();
+
+        return;
+    }
     weight_detected = !wall_detected && detect_weight();
 
     if (weight_detected)
@@ -126,52 +136,52 @@ void weight_detection_task()
     }
 } 
 
-void drawToF_dithered_fast(U8G2& u8g2,
-                           uint16_t d_max,
-                           int x0, int y0)
-{
-    (void)d_max;
+// void drawToF_dithered_fast(U8G2& u8g2,
+//                            uint16_t d_max,
+//                            int x0, int y0)
+// {
+//     (void)d_max;
 
-    const int cell_size = 8;
+//     const int cell_size = 8;
 
-    if (weight_detected)
-    {
-        switch (weight_type){
-            case WEIGHT_2X2:
-            u8g2.drawStr(70, 10, "2X2");
-            break;
+//     if (weight_detected)
+//     {
+//         switch (weight_type){
+//             case WEIGHT_2X2:
+//             u8g2.drawStr(70, 10, "2X2");
+//             break;
 
-            case WEIGHT_2X3:
-            u8g2.drawStr(70, 10, "2X3");
-            break;
+//             case WEIGHT_2X3:
+//             u8g2.drawStr(70, 10, "2X3");
+//             break;
 
-            default:
-            u8g2.drawStr(70, 10, "WEIGHT");
-            break;
-        }
-    }
-    else if (wall_detected)
-    {
-        u8g2.drawStr(70, 10, "WALL");
-    }
+//             default:
+//             u8g2.drawStr(70, 10, "WEIGHT");
+//             break;
+//         }
+//     }
+//     else if (wall_detected)
+//     {
+//         u8g2.drawStr(70, 10, "WALL");
+//     }
 
 
-    for (int cy = 0; cy < 8; cy++)
-    {
-        for (int cx = 0; cx < 8; cx++)
-        {
-            int index = cy * 8 + cx;
+//     for (int cy = 0; cy < 8; cy++)
+//     {
+//         for (int cx = 0; cx < 8; cx++)
+//         {
+//             int index = cy * 8 + cx;
 
-            int base_x = x0 + cx * cell_size;
-            int base_y = y0 + cy * cell_size;
+//             int base_x = x0 + cx * cell_size;
+//             int base_y = y0 + cy * cell_size;
 
-            if (active[index])
-            {
-                u8g2.drawBox(base_x, base_y, cell_size, cell_size);
-            }
-        }
-    }
-}
+//             if (active[index])
+//             {
+//                 u8g2.drawBox(base_x, base_y, cell_size, cell_size);
+//             }
+//         }
+//     }
+// }
 
 
 void filter() //filter out random pixels
@@ -292,9 +302,9 @@ static bool is_exact_2x2(int x, int y)
 
     // Block larger patterns like 2x3, 3x2, 2x4 etc.
     if (is_active_cell(x - 1, y) || is_active_cell(x + 2, y) ||
-        is_active_cell(x - 1, y + 1) || 
+        is_active_cell(x - 1, y + 1) || is_active_cell(x + 2, y + 1) ||
         is_active_cell(x, y - 1) || is_active_cell(x + 1, y - 1) ||
-        is_active_cell(x, y + 2))
+        is_active_cell(x, y + 2) || is_active_cell(x + 1, y + 2))
     {
         return false;
     }
@@ -320,7 +330,8 @@ static bool is_exact_2x3(int x, int y)
     // Reject larger patterns like 2x4, 3x2, 3x3
     if (is_active_cell(x - 1, y) || is_active_cell(x + 2, y) ||
         is_active_cell(x - 1, y + 1) || is_active_cell(x + 2, y + 1) ||
-        is_active_cell(x - 1, y + 2) || is_active_cell(x + 2, y + 2) || 
+        is_active_cell(x - 1, y + 2) || is_active_cell(x + 2, y + 2) ||
+        is_active_cell(x, y - 1) || is_active_cell(x + 1, y - 1) ||
         is_active_cell(x, y + 3) || is_active_cell(x + 1, y + 3))
     {
         return false;
@@ -331,10 +342,11 @@ static bool is_exact_2x3(int x, int y)
 
 bool detect_weight()
 {
+
+
     for (int y = 1; y < 7; y++)
     {
         for (int x = 1; x < 7; x++)
-
         {
             if (is_exact_2x2(x, y))
             {
@@ -355,17 +367,17 @@ bool detect_weight()
 }
   
 
-void draw_depth_data(U8G2& u8g2)
-{
-    // tof.getAllData(buf);
+// void draw_depth_data(U8G2& u8g2)
+// {
+//     // tof.getAllData(buf);
 
-    drawToF_dithered_fast(u8g2, 200, 0, 0);
-    if (read_button(A9) == LOW)
-    {
-        u8g2.drawStr(70, 10, "calibrating...");
-        fill_calibration_matrix();
-    }
-}
+//     drawToF_dithered_fast(u8g2, 200, 0, 0);
+//     if (read_button(A9) == LOW)
+//     {
+//         u8g2.drawStr(70, 10, "calibrating...");
+//         fill_calibration_matrix();
+//     }
+// }
 
 
 void fill_calibration_matrix()

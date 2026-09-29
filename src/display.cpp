@@ -159,8 +159,8 @@ void display_draw()
             break;
         case PAGE_DEBUG: draw_debug();
             break;
-        case PAGE_8X8_TOF: draw_depth_data(display);
-            break;
+        // case PAGE_8X8_TOF: draw_depth_data(display);
+        //     break;
         case PAGE_MAP: draw_map();
             break;
         case PAGE_MISSION: draw_mission();

@@ -42,14 +42,14 @@ void scheduler_run(task_t* tasks, uint8_t count)
 
         // Temporary diagnostic. Print only if buffer space exists,
         // to reduce the chance that logging itself blocks control.
-        // if (duration_us > 5000 &&
-        //     Serial.availableForWrite() >= 64)
-        // {
-        //     Serial.printf(
-        //         "SLOW task=%u duration=%lu us\n",
-        //         (unsigned)i,
-        //         (unsigned long)duration_us);
-        // }
+        if (duration_us > 5000 &&
+            Serial.availableForWrite() >= 64)
+        {
+            Serial.printf(
+                "SLOW task=%u duration=%lu us\n",
+                (unsigned)i,
+                (unsigned long)duration_us);
+        }
 
         now = micros();
 
