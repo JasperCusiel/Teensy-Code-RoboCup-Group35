@@ -1,492 +1,424 @@
-//
-// Created by Jasper Cusiel on 03/08/2026.
-//
 #include "weight-detection.h"
 #include "DFRobot_MatrixLidar.h"
-#include "ToF-Sensors.h"
 #include "button.h"
 #include "mission.h"
-#include "navigation.h"
+#include <Arduino.h>
 #include <math.h>
+#include <string.h>
 
-
-#define TOF_ARRAY_ADDRESS 0x33
-#define WEIGHT_MIN_DELTA 25
-#define WEIGHT_MAX_DELTA 150
-#define WEIGHT_MAX_ACTIVE_CELLS 32
-#define WALL_FRONT_CONE_RAD (35.0f * Pi / 180.0f)
-#define WALL_MIN_RANGE_M 0.05f
-#define WALL_MAX_RANGE_M 0.55f
-#define WALL_MAX_RANGE_SPREAD_M 0.12f
-#define WALL_MIN_ADJACENT_POINTS 4
-#define WEIGHT_DETECTED_CYCLES 5
-#define TOF_SAMPLE_INTERVAL_MS 20u
-#define TOF_CALIBRATION_SAMPLE_DELAY_MS 50u
-
-DFRobot_MatrixLidar_I2C tof(TOF_ARRAY_ADDRESS, &Wire1);
-uint16_t buf[64];
-uint32_t calibration[64];
-bool active[64];
+DFRobot_MatrixLidar_I2C tof(0x33, &Wire1);
+uint16_t buf[64] = {};
+uint32_t calibration[64] = {};
+bool active[64] = {};
 bool weight_detected = false;
-bool wall_detected = false;
+bool wall_detected = false; // broad foreground / wall-like shape, not proven wall
 
-// Circular buffer for non-blocking sampling
-static const uint8_t SAMPLE_BUFFER_SIZE = 8;
-static uint16_t sample_buffer[SAMPLE_BUFFER_SIZE][64];
-static uint8_t sample_index = 0;
-static uint32_t last_sample_ms = 0;
-static lidar_scan* cached_scan = nullptr;
+enum WeightType { WEIGHT_NONE, WEIGHT_2X2, WEIGHT_2X3 };
 
-// Async calibration state
-static bool calibration_in_progress = false;
-static bool calibration_waiting_for_clear = false;  // Wait for no wall before calibrating
-static uint8_t calibration_sample_count = 0;
-static uint32_t last_calibration_sample_ms = 0;
-static uint32_t calibration_sum[64] = {0};
+WeightType weight_type = WEIGHT_NONE; // legacy symbol; UI now uses actual blob size
 
-enum WeightType
+namespace
 {
-    WEIGHT_NONE,
-    WEIGHT_2X2,
-    WEIGHT_2X3
-};
+    constexpr uint32_t kSampleMs = 50, kStaleMs = 300, kCalibrationTimeoutMs = 5000;
+    constexpr int kCalFrames = 16, kMinCalSamples = 12;
+    constexpr int kMinRangeMm = 40, kMaxRangeMm = 2000;
+    constexpr int kMinDeltaMm = 18, kMaxCalibrationNoiseMm = 12;
+    constexpr int kMinUsableCells = 32;
+    constexpr int kMaxSceneShiftMm = 20, kMaxForegroundCells = 24;
+    constexpr int kMinCells = 3, kMaxCells = 20, kMaxExtent = 5;
+    constexpr int kMaxDepthSpreadMm = 90, kBorderContrastMm = 10;
+    constexpr int kConfirmFrames = 2, kReleaseFrames = 5;
+    constexpr bool kDebug = true;
 
-WeightType weight_type = WEIGHT_NONE;
+    bool ready = false, calibrated = false, calibrating = false, calFailed = false;
+    bool calTimerStarted = false;
+    bool usable[64] = {};
+    uint16_t noise[64] = {}, samples[kCalFrames][64] = {};
+    uint8_t calCount = 0, hits = 0, misses = 0;
+    bool reported = false, tracking = false;
+    uint32_t lastReadMs = 0, lastGoodMs = 0, calStartMs = 0, lastLogMs = 0;
+    int foregroundCount = 0, sceneShift = 0;
+    int validCells = 0, peakDelta = 0;
+    const char* rejectReason = "none";
+    uint32_t readTimeUs = 0;
 
+    struct Blob
+    {
+        int count = 0, width = 0, height = 0, range = 0;
+        float x = 0, y = 0;
+    };
 
-static bool tof_array_sees_wall();
+    Blob candidate, previous;
 
+    bool valid(uint16_t v) { return v >= kMinRangeMm && v <= kMaxRangeMm; }
+
+    int median(int* a, int n)
+    {
+        for (int i = 1; i < n; ++i)
+        {
+            int v = a[i], j = i;
+            while (j > 0 && a[j - 1] > v)
+            {
+                a[j] = a[j - 1];
+                --j;
+            }
+            a[j] = v;
+        }
+        return n ? a[n / 2] : 0;
+    }
+
+    void resetDetection(bool rearm)
+    {
+        memset(active, 0, sizeof(active));
+        weight_detected = false;
+        wall_detected = false;
+        weight_type = WEIGHT_NONE;
+        hits = 0;
+        misses = 0;
+        tracking = false;
+        candidate = Blob{};
+        if (rearm) reported = false;
+    }
+
+    void finishCalibration()
+    {
+        uint32_t nextBase[64] = {};
+        uint16_t nextNoise[64] = {};
+        bool nextUsable[64] = {};
+        int good = 0;
+        for (int i = 0; i < 64; ++i)
+        {
+            int a[kCalFrames], n = 0;
+            for (int f = 0; f < kCalFrames; ++f)
+                if (valid(samples[f][i])) a[n++] = samples[f][i];
+            if (n < kMinCalSamples) continue;
+            int base = median(a, n);
+            for (int j = 0; j < n; ++j) a[j] = abs(a[j] - base);
+            int mad = median(a, n);
+            if (mad > kMaxCalibrationNoiseMm) continue;
+            nextBase[i] = base;
+            nextNoise[i] = mad;
+            nextUsable[i] = true;
+            ++good;
+        }
+        calibrating = false;
+        // A failed recalibration leaves old values intact, but detection disabled
+        // until a successful explicit calibration, rather than using a suspect view.
+        calFailed = good < kMinUsableCells;
+        calibrated = !calFailed;
+        if (calibrated)
+        {
+            memcpy(calibration, nextBase, sizeof(calibration));
+            memcpy(noise, nextNoise, sizeof(noise));
+            memcpy(usable, nextUsable, sizeof(usable));
+        }
+        resetDetection(true);
+        if (kDebug) Serial.printf("WEIGHT CAL: %s usable=%d/64\n", calibrated ? "OK" : "FAIL", good);
+    }
+
+    bool findCandidate()
+    {
+        candidate = Blob{};
+        foregroundCount = 0;
+        wall_detected = false;
+        validCells = 0;
+        peakDelta = 0;
+        sceneShift = 0;
+        rejectReason = "no-foreground";
+        memset(active, 0, sizeof(active));
+        int delta[64] = {}, shifts[64], n = 0;
+        bool good[64] = {}, foreground[64] = {}, visited[64] = {};
+        for (int i = 0; i < 64; ++i)
+        {
+            good[i] = usable[i] && valid(buf[i]);
+            if (good[i])
+            {
+                delta[i] = int(calibration[i]) - int(buf[i]);
+                shifts[n++] = delta[i];
+            }
+        }
+        validCells = n;
+        if (n < kMinUsableCells)
+        {
+            rejectReason = "too-few-valid";
+            return false;
+        }
+        sceneShift = median(shifts, n);
+        // Small global floor-distance shifts may be vibration; large shifts are
+        // ambiguous (pitch, floor change, or a broad obstacle): fail closed.
+        if (abs(sceneShift) > kMaxSceneShiftMm)
+        {
+            wall_detected = true;
+            rejectReason = "scene-shift";
+            return false;
+        }
+        for (int i = 0; i < 64; ++i)
+        {
+            delta[i] -= sceneShift;
+            // Noise adds at most 15 mm: old threshold could reach 78 mm.
+            const int extra = 2 * int(noise[i]);
+            const int threshold = kMinDeltaMm + (extra < 15 ? extra : 15);
+            if (good[i] && delta[i] > peakDelta) peakDelta = delta[i];
+            foreground[i] = good[i] && delta[i] >= threshold;
+            foregroundCount += foreground[i];
+        }
+        if (foregroundCount > kMaxForegroundCells)
+        {
+            wall_detected = true;
+            rejectReason = "broad-foreground";
+            return false;
+        }
+        // Eight-connected components, without first eroding their boundaries.
+        // Do NOT impose a maximum delta: that can carve a wall into small blobs.
+        for (int seed = 0; seed < 64; ++seed)
+        {
+            if (!foreground[seed] || visited[seed]) continue;
+            int queue[64], head = 0, tail = 0;
+            queue[tail++] = seed;
+            visited[seed] = true;
+            int minX = 7, maxX = 0, minY = 7, maxY = 0, minD = 65535, maxD = 0, sx = 0, sy = 0;
+            int depths[64], deltas[64];
+            while (head < tail)
+            {
+                const int i = queue[head++], x = i % 8, y = i / 8;
+                minX = x < minX ? x : minX;
+                maxX = x > maxX ? x : maxX;
+                minY = y < minY ? y : minY;
+                maxY = y > maxY ? y : maxY;
+                minD = buf[i] < minD ? buf[i] : minD;
+                maxD = buf[i] > maxD ? buf[i] : maxD;
+                sx += x;
+                sy += y;
+                depths[head - 1] = buf[i];
+                deltas[head - 1] = delta[i];
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx)
+                    {
+                        int xx = x + dx, yy = y + dy;
+                        if (xx < 0 || xx > 7 || yy < 0 || yy > 7) continue;
+                        int j = yy * 8 + xx;
+                        if (foreground[j] && !visited[j])
+                        {
+                            visited[j] = true;
+                            queue[tail++] = j;
+                        }
+                    }
+            }
+            int w = maxX - minX + 1, h = maxY - minY + 1;
+            if (w > kMaxExtent || h > kMaxExtent || tail > kMaxCells)
+            {
+                wall_detected = true;
+                rejectReason = "large-blob";
+                continue;
+            }
+            if (tail < kMinCells || w < 2 || h < 2 || tail * 100 < 45 * w * h)
+            {
+                rejectReason = "small-sparse-blob";
+                continue;
+            }
+            if (maxD - minD > kMaxDepthSpreadMm)
+            {
+                rejectReason = "depth-spread";
+                continue;
+            }
+            // Require background on any TWO sides, allowing partial edge objects. Compare
+            // calibrated residuals (not raw floor ranges, which vary with row).
+            const int objectDelta = median(deltas, tail);
+            int clearSides = 0;
+            for (int side = 0; side < 4; ++side)
+            {
+                int total = (side < 2 ? w : h), validN = 0, clearN = 0;
+                for (int k = 0; k < total; ++k)
+                {
+                    int x = side < 2 ? minX + k : (side == 2 ? minX - 1 : maxX + 1);
+                    int y = side < 2 ? (side == 0 ? minY - 1 : maxY + 1) : minY + k;
+                    if (x < 0 || x > 7 || y < 0 || y > 7) continue;
+                    int j = y * 8 + x;
+                    if (!good[j]) continue;
+                    ++validN;
+                    if (!foreground[j] && objectDelta - delta[j] >= kBorderContrastMm) ++clearN;
+                }
+                if (validN * 2 >= total && clearN * 2 >= total) ++clearSides;
+            }
+            if (clearSides < 2)
+            {
+                rejectReason = "no-boundary";
+                continue;
+            }
+            Blob b;
+            b.count = tail;
+            b.width = w;
+            b.height = h;
+            b.range = median(depths, tail);
+            b.x = float(sx) / tail;
+            b.y = float(sy) / tail;
+            // Prefer the tracked object; otherwise prefer the largest candidate.
+            bool match = tracking && fabsf(b.x - previous.x) <= 1.5f &&
+                fabsf(b.y - previous.y) <= 1.5f && abs(b.range - previous.range) <= 100;
+            bool oldMatch = tracking && candidate.count && fabsf(candidate.x - previous.x) <= 1.5f &&
+                fabsf(candidate.y - previous.y) <= 1.5f && abs(candidate.range - previous.range) <= 100;
+            if (!candidate.count || (match && !oldMatch) || (match == oldMatch && b.count > candidate.count))
+            {
+                candidate = b;
+                memset(active, 0, sizeof(active));
+                for (int k = 0; k < tail; ++k) active[queue[k]] = true;
+            }
+        }
+        if (candidate.count) rejectReason = "candidate";
+        return candidate.count != 0;
+    }
+
+    void updateConfirmation(bool found)
+    {
+        weight_detected = false;
+        if (!found)
+        {
+            hits = 0;
+            tracking = false;
+            if (misses < kReleaseFrames) ++misses;
+            if (misses >= kReleaseFrames) reported = false;
+            return;
+        }
+        misses = 0;
+        bool same = tracking && fabsf(candidate.x - previous.x) <= 1.5f &&
+            fabsf(candidate.y - previous.y) <= 1.5f && abs(candidate.range - previous.range) <= 100;
+        hits = same ? (hits < kConfirmFrames ? hits + 1 : hits) : 1;
+        previous = candidate;
+        tracking = true;
+        weight_detected = hits >= kConfirmFrames;
+        if (weight_detected && !reported)
+        {
+            reported = true;
+            mission_report_weight_detected();
+        }
+    }
+}
+
+void fill_calibration_matrix()
+{
+    if (!ready || calibrating) return;
+    calibrating = true;
+    calibrated = false;
+    calFailed = false;
+    calTimerStarted = false;
+    calCount = 0;
+    memset(samples, 0, sizeof(samples));
+    resetDetection(true);
+}
 
 bool weight_detection_init()
 {
-    // Check sensor starts and set to 8x8 mode
-    if (tof.begin() == 0 && tof.setRangingMode(eMatrix_8X8) == 0)
-    {
-        // Start waiting for a clear environment before calibrating
-        calibration_waiting_for_clear = true;
-        return true;
-    }
-    return false;
+    ready = false;
+    calibrated = false;
+    calibrating = false;
+    resetDetection(true);
+    if (tof.begin() != 0 || tof.setRangingMode(eMatrix_8X8) != 0) return false;
+    ready = true;
+    lastReadMs = millis();
+    lastGoodMs = lastReadMs;
+    fill_calibration_matrix();
+    return true;
 }
 
 void weight_detection_task()
 {
-    // Handle waiting for clear environment before calibration
-    if (calibration_waiting_for_clear)
+    if (!ready) return;
+    uint32_t now = millis();
+    // Calibration can be requested during setup, before the scheduler starts.
+    // Do not count that idle setup/GO-button time against its timeout.
+    if (calibrating && !calTimerStarted)
     {
-        // Need at least one sample to check for walls
-        if (millis() - last_sample_ms >= TOF_SAMPLE_INTERVAL_MS)
+        calStartMs = now;
+        calTimerStarted = true;
+    }
+    if (calibrating && now - calStartMs > kCalibrationTimeoutMs)
+    {
+        calibrating = false;
+        calibrated = false;
+        calFailed = true;
+        resetDetection(true);
+        if (kDebug)
+            Serial.printf("WEIGHT CAL: timeout frames=%u/%d\n", unsigned(calCount), kCalFrames);
+    }
+    if (now - lastGoodMs > kStaleMs) resetDetection(false);
+    if (now - lastReadMs < kSampleMs) return;
+    lastReadMs = now;
+    uint16_t frame[64] = {};
+    uint32_t started = micros();
+    const bool ok = tof.getAllData(frame) == 0;
+    readTimeUs = micros() - started;
+    if (!ok)
+    {
+        if (kDebug && millis() - lastLogMs >= 250)
         {
-            last_sample_ms = millis();
-            tof.getAllData(sample_buffer[sample_index]);
-            sample_index = (sample_index + 1) % SAMPLE_BUFFER_SIZE;
+            lastLogMs = millis();
+            Serial.println("WEIGHT reason=read-failed");
         }
-
-        // Compute averaged data
-        for (int i = 0; i < 64; i++)
-        {
-            uint32_t sum = 0;
-            for (int j = 0; j < SAMPLE_BUFFER_SIZE; j++)
-            {
-                sum += sample_buffer[j][i];
-            }
-            buf[i] = sum / SAMPLE_BUFFER_SIZE;
-        }
-
-        // Check for walls
-        cached_scan = get_scan();
-        wall_detected = tof_array_sees_wall();
-
-        if (!wall_detected)
-        {
-            // Clear path - start calibration
-            calibration_waiting_for_clear = false;
-            fill_calibration_matrix_async();
-        }
+        resetDetection(false); // communication failures cannot rearm the event
         return;
     }
-
-    // Non-blocking sampling - grab one sample per cycle
-    if (millis() - last_sample_ms >= TOF_SAMPLE_INTERVAL_MS)
+    lastGoodMs = millis();
+    memcpy(buf, frame, sizeof(buf));
+    if (calibrating)
     {
-        last_sample_ms = millis();
-        tof.getAllData(sample_buffer[sample_index]);
-        sample_index = (sample_index + 1) % SAMPLE_BUFFER_SIZE;
-    }
-
-    // Compute averaged data from circular buffer
-    for (int i = 0; i < 64; i++)
-    {
-        uint32_t sum = 0;
-        for (int j = 0; j < SAMPLE_BUFFER_SIZE; j++)
-        {
-            sum += sample_buffer[j][i];
-        }
-        buf[i] = sum / SAMPLE_BUFFER_SIZE;
-    }
-
-    // Cache LIDAR scan once per task cycle
-    cached_scan = get_scan();
-
-    int active_count = 0;
-    for (int i = 0; i < 64; i++)
-    {
-        int16_t d = (int16_t)calibration[i] - (int16_t)buf[i];
-        active[i] = (d > WEIGHT_MIN_DELTA && d < WEIGHT_MAX_DELTA);
-        if (active[i])
-        {
-            active_count++;
-        }
-    }
-
-    if (active_count > WEIGHT_MAX_ACTIVE_CELLS)
-    {
-        for (int i = 0; i < 64; i++)
-        {
-            active[i] = false;
-        }
-    }
-
-    filter();
-    wall_detected = tof_array_sees_wall();
-
-    if (wall_detected)
-    {
-        weight_detected = false;
-        weight_type = WEIGHT_NONE;
-        navigation_clear_goal();
-        navigation_request_replan();
+        memcpy(samples[calCount++], buf, sizeof(buf));
+        if (calCount == kCalFrames) finishCalibration();
         return;
     }
-
-    weight_detected = !wall_detected && detect_weight();
-
-    if (weight_detected)
+    if (!calibrated) return;
+    // A long read/scheduling gap cannot count toward consecutive confirmation.
+    if (readTimeUs > kStaleMs * 1000u)
     {
-        mission_report_weight_detected();
-    }
-}
-
-void fill_calibration_matrix_async()
-{
-    if (!calibration_in_progress)
-    {
-        // Start calibration
-        calibration_in_progress = true;
-        calibration_sample_count = 0;
-        last_calibration_sample_ms = millis();
-        for (int i = 0; i < 64; i++)
-        {
-            calibration_sum[i] = 0;
-        }
+        resetDetection(false);
         return;
     }
-
-    // Collect one sample per cycle
-    if (millis() - last_calibration_sample_ms >= TOF_CALIBRATION_SAMPLE_DELAY_MS)
+    updateConfirmation(findCandidate());
+    if (kDebug && millis() - lastLogMs >= 250)
     {
-        last_calibration_sample_ms = millis();
-        tof.getAllData(buf);
-        for (int i = 0; i < 64; i++)
-        {
-            calibration_sum[i] += buf[i];
-        }
-        calibration_sample_count++;
-
-        if (calibration_sample_count >= 10)
-        {
-            // Calibration complete
-            for (int i = 0; i < 64; i++)
-            {
-                calibration[i] = calibration_sum[i] / 10;
-            }
-            calibration_in_progress = false;
-        }
+        lastLogMs = millis();
+        Serial.printf(
+            "WEIGHT valid=%d peak=%d reason=%s fg=%d shift=%d wallLike=%d blob=%d size=%dx%d range=%d hits=%u/%d detected=%d read_us=%lu\n",
+            validCells, peakDelta, rejectReason, foregroundCount, sceneShift, wall_detected, candidate.count,
+            candidate.width,
+            candidate.height, candidate.range, unsigned(hits), kConfirmFrames,
+            weight_detected, (unsigned long)readTimeUs);
     }
 }
 
-bool is_calibration_complete()
+// Compatibility with existing header declarations; task owns confirmation.
+bool detect_weight() { return weight_detected; }
+
+void filter()
 {
-    return !calibration_in_progress;
-}
+} // No erosion: component analysis replaces the old filter.
 
-
-// void drawToF_dithered_fast(U8G2& u8g2,
-//                            uint16_t d_max,
-//                            int x0, int y0)
-// {
-//     (void)d_max;
-
-//     const int cell_size = 8;
-
-//     if (weight_detected)
-//     {
-//         switch (weight_type){
-//             case WEIGHT_2X2:
-//             u8g2.drawStr(70, 10, "2X2");
-//             break;
-
-//             case WEIGHT_2X3:
-//             u8g2.drawStr(70, 10, "2X3");
-//             break;
-
-//             default:
-//             u8g2.drawStr(70, 10, "WEIGHT");
-//             break;
-//         }
-//     }
-//     else if (wall_detected)
-//     {
-//         u8g2.drawStr(70, 10, "WALL");
-//     }
-
-
-//     for (int cy = 0; cy < 8; cy++)
-//     {
-//         for (int cx = 0; cx < 8; cx++)
-//         {
-//             int index = cy * 8 + cx;
-
-//             int base_x = x0 + cx * cell_size;
-//             int base_y = y0 + cy * cell_size;
-
-//             if (active[index])
-//             {
-//                 u8g2.drawBox(base_x, base_y, cell_size, cell_size);
-//             }
-//         }
-//     }
-// }
-
-
-void filter() //filter out random pixels
+void drawToF_dithered_fast(U8G2& u8g2, uint16_t d_max, int x0, int y0)
 {
-    bool filtered[64] = {false};
-
-    for (int cy = 0; cy < 8; cy++)
-    {
-        for (int cx = 0; cx < 8; cx++)
-        {
-            int index = cy * 8 + cx;
-
-            if (!active[index])
-            {
-                continue;
-            }
-
-            int neighbours = 0;
-            if (cx > 0 && active[index - 1])
-            {
-                neighbours++;
-            }
-            if (cx < 7 && active[index + 1])
-            {
-                neighbours++;
-            }
-            if (cy > 0 && active[index - 8])
-            {
-                neighbours++;
-            }
-
-            if (cy < 7 && active[index + 8])
-            {
-                neighbours++;
-            }
-
-            if (neighbours >= 2)
-            {
-                filtered[index] = true;
-            }
-        }
-    }
-
-    // Copy filtered result back
-    for (int i = 0; i < 64; i++)
-    {
-        active[i] = filtered[i];
-    }
+    (void)d_max;
+    const char* label = calibrating
+                            ? "CAL..."
+                            : calFailed
+                            ? "CAL FAIL"
+                            : !calibrated
+                            ? "NOT READY"
+                            : weight_detected
+                            ? "WEIGHT"
+                            : candidate.count
+                            ? "CANDIDATE"
+                            : wall_detected
+                            ? "WALL-LIKE"
+                            : "CLEAR";
+    u8g2.drawStr(70, 10, label);
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x)
+            if (active[y * 8 + x]) u8g2.drawBox(x0 + x * 8, y0 + y * 8, 8, 8);
 }
 
-static bool tof_array_sees_wall()
+void draw_depth_data(U8G2& u8g2)
 {
-    if (!cached_scan) return false;
-
-    lidar_scan* scan = cached_scan;
-    int adjacent_points = 0;
-    float min_range = WALL_MAX_RANGE_M;
-    float max_range = 0.0f;
-
-    for (int i = 0; i < NUM_POINTS; i++)
-    {
-        const float range = scan->ranges[i];
-        const bool close_front_return =
-            fabsf(scan->angles[i]) <= WALL_FRONT_CONE_RAD &&
-            range >= WALL_MIN_RANGE_M &&
-            range <= WALL_MAX_RANGE_M;
-
-        if (!close_front_return)
-        {
-            adjacent_points = 0;
-            min_range = WALL_MAX_RANGE_M;
-            max_range = 0.0f;
-            continue;
-        }
-
-        adjacent_points++;
-        if (range < min_range)
-        {
-            min_range = range;
-        }
-        if (range > max_range)
-        {
-            max_range = range;
-        }
-
-        if (adjacent_points >= WALL_MIN_ADJACENT_POINTS &&
-            max_range - min_range <= WALL_MAX_RANGE_SPREAD_M)
-        {
-            return true;
-        }
-    }
-
-    return false;
+    static bool wasPressed = false;
+    bool pressed = read_button(A9) == LOW;
+    if (pressed && !wasPressed) fill_calibration_matrix();
+    wasPressed = pressed;
+    drawToF_dithered_fast(u8g2, 200, 0, 0);
 }
-
-static bool is_active_cell(int x, int y)
-{
-    if (x < 0 || x >= 8 || y < 0 || y >= 8)
-    {
-        return false;
-    }
-
-    return active[y * 8 + x];
-}
-
-
-static bool is_exact_2x2(int x, int y)
-{
-    if (x < 0 || y < 0 || x + 1 >= 8 || y + 1 >= 8)
-    {
-        return false;
-    }
-
-    // Require the exact 2x2 block
-    if (!is_active_cell(x, y) || !is_active_cell(x + 1, y) ||
-        !is_active_cell(x, y + 1) || !is_active_cell(x + 1, y + 1))
-    {
-        return false;
-    }
-
-    // Block larger patterns like 2x3, 3x2, 2x4 etc.
-    if (is_active_cell(x - 1, y) || is_active_cell(x + 2, y) ||
-        is_active_cell(x - 1, y + 1) || is_active_cell(x + 2, y + 1) ||
-        is_active_cell(x, y - 1) || is_active_cell(x + 1, y - 1) ||
-        is_active_cell(x, y + 2) || is_active_cell(x + 1, y + 2))
-    {
-        return false;
-    }
-
-    return true;
-}
-
-static bool is_exact_2x3(int x, int y)
-{
-    if (x < 0 || y < 0 || x + 1 >= 8 || y + 2 >= 8)
-    {
-        return false;
-    }
-
-    // Require the exact 2x3 block
-    if (!is_active_cell(x, y) || !is_active_cell(x + 1, y) ||
-        !is_active_cell(x, y + 1) || !is_active_cell(x + 1, y + 1) ||
-        !is_active_cell(x, y + 2) || !is_active_cell(x + 1, y + 2))
-    {
-        return false;
-    }
-
-    // Reject larger patterns like 2x4, 3x2, 3x3
-    if (is_active_cell(x - 1, y) || is_active_cell(x + 2, y) ||
-        is_active_cell(x - 1, y + 1) || is_active_cell(x + 2, y + 1) ||
-        is_active_cell(x - 1, y + 2) || is_active_cell(x + 2, y + 2) ||
-        is_active_cell(x, y - 1) || is_active_cell(x + 1, y - 1) ||
-        is_active_cell(x, y + 3) || is_active_cell(x + 1, y + 3))
-    {
-        return false;
-    }
-
-    return true;
-}
-
-bool detect_weight()
-{
-
-
-    for (int y = 1; y < 7; y++)
-    {
-        for (int x = 1; x < 7; x++)
-        {
-            if (is_exact_2x2(x, y))
-            {
-                weight_type = WEIGHT_2X2;
-                return true;
-            }
-
-            if (is_exact_2x3(x, y))
-            {
-                weight_type = WEIGHT_2X3;
-                return true;
-            }
-        }
-    }
-
-    weight_type = WEIGHT_NONE;
-    return false;
-}
-  
-
-// void draw_depth_data(U8G2& u8g2)
-// {
-//     // tof.getAllData(buf);
-
-//     drawToF_dithered_fast(u8g2, 200, 0, 0);
-//     if (read_button(A9) == LOW)
-//     {
-//         u8g2.drawStr(70, 10, "calibrating...");
-//         fill_calibration_matrix();
-//     }
-// }
-
-
-void fill_calibration_matrix()
-{
-    // Reset calibration data
-    for (size_t j = 0; j < 64; j++)
-    {
-        calibration[j] = 0;
-    }
-
-    uint32_t last_sample_ms = millis();
-    for (size_t i = 0; i < 10; i++)
-    {
-        while (millis() - last_sample_ms < TOF_CALIBRATION_SAMPLE_DELAY_MS)
-        {
-            yield();
-        }
-        last_sample_ms = millis();
-
-        tof.getAllData(buf);
-        // Add data to calibration buffer
-        for (size_t j = 0; j < 64; j++)
-        {
-            calibration[j] += buf[j];
-        }
-    }
-    // Average data
-    for (size_t j = 0; j < 64; j++)
-    {
-        calibration[j] = calibration[j] / 10;
-    }
-}
-
-
-

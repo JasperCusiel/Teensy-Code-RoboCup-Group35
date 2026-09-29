@@ -62,8 +62,10 @@ namespace // Keep variables and helper functions private to this file.
     constexpr float kScanReverseSpeedMps = -0.15f;
     constexpr float kReverseMotionThresholdMps = 0.01f;
     constexpr uint8_t kReverseMotionConfirmations = 2;
-    constexpr float kReverseRecoveryDistanceM = 0.30f;
+    constexpr float kReverseRecoveryDistanceM = 0.15f;
+    constexpr uint32_t kReverseRecoveryTimeoutMs = 3000;
     constexpr uint32_t kReverseRetryPauseMs = 500;
+    uint32_t reverse_recovery_started_ms = 0;
     uint32_t reverse_retry_started_ms = 0;
     uint32_t last_motion_debug_ms = 0;
 
@@ -84,11 +86,15 @@ namespace // Keep variables and helper functions private to this file.
         reverse_motion_confirmations = 0;
     }
 
-    void begin_reverse_recovery(const pose_t& pose)
+    void begin_reverse_recovery(const pose_t& pose, bool retrying = false)
     {
         scan_active = true;
-        scan_start_x = pose.x;
-        scan_start_y = pose.y;
+        if (!retrying)
+        {
+            scan_start_x = pose.x;
+            scan_start_y = pose.y;
+            reverse_recovery_started_ms = millis();
+        }
         reverse_recovery_active = true;
         reverse_retry_pending = false;
         reverse_motion_confirmed = false;
@@ -139,7 +145,7 @@ namespace // Keep variables and helper functions private to this file.
             {
                 reverse_motion_confirmed = true;
                 Serial.println(
-                    "RECOVERY: reverse motion detected; continuing 0.30 m");
+                    "RECOVERY: reverse motion detected; continuing to 0.15 m");
             }
 
             const float reverse_dx = pose.x - scan_start_x;
@@ -388,6 +394,25 @@ void autonomy_task()
     const bool mission_allows_recovery =
         mission_should_explore() || mission_should_return_home();
 
+    // Bound the whole recovery, including pauses and retries. If the robot is
+    // pinned against a wall, stop trying to reverse and let navigation choose
+    // a new plan instead of clearing and retrying the same stall forever.
+    if ((reverse_recovery_active || reverse_retry_pending) &&
+        static_cast<uint32_t>(millis() - reverse_recovery_started_ms) >=
+        kReverseRecoveryTimeoutMs)
+    {
+        motion_controller_stop();
+        if (recoverable_stall)
+        {
+            drivetrain_clear_fault();
+        }
+        reset_scan();
+        navigation_request_replan();
+        safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+        Serial.println("RECOVERY: reverse timed out; replanning");
+        return;
+    }
+
     // A latched stall zeros and rejects every wheel command. Clear it while
     // stopped, then immediately replace the failed command with reverse.
     if (recoverable_stall && mission_allows_recovery &&
@@ -404,7 +429,7 @@ void autonomy_task()
         const bool retrying = reverse_retry_pending;
         motion_controller_stop();
         drivetrain_clear_fault();
-        begin_reverse_recovery(current_pose);
+        begin_reverse_recovery(current_pose, retrying);
         safe_command = {
             current_pose.theta,
             kScanReverseSpeedMps,
@@ -516,25 +541,25 @@ void autonomy_task()
     {
         last_motion_debug_ms = millis();
 
-        Serial.printf(
-            "CMD PP: stop=%u v=%.3f w=%.3f | "
-            "SAFE: stop=%u v=%.3f w=%.3f\n",
-            target.stop ? 1u : 0u,
-            target.linear_speed,
-            target.turn_rate,
-            safe_command.stop ? 1u : 0u,
-            safe_command.linear_speed,
-            safe_command.turn_rate);
-        Serial.printf(
-            "MISSION state=%u | NAV state=%u path=%u "
-            "scan=%u reverse=%u steer=%.1f clearance=%.2f\n",
-            static_cast<unsigned>(mission_get_state()),
-            static_cast<unsigned>(navigation_get_status()),
-            navigation_has_path() ? 1u : 0u,
-            scan_active ? 1u : 0u,
-            reverse_recovery_active ? 1u : 0u,
-            vfh_get_steering_angle() * 180.0f / PI,
-            vfh_get_forward_clearance());
+        // Serial.printf(
+        //     "CMD PP: stop=%u v=%.3f w=%.3f | "
+        //     "SAFE: stop=%u v=%.3f w=%.3f\n",
+        //     target.stop ? 1u : 0u,
+        //     target.linear_speed,
+        //     target.turn_rate,
+        //     safe_command.stop ? 1u : 0u,
+        //     safe_command.linear_speed,
+        //     safe_command.turn_rate);
+        // Serial.printf(
+        //     "MISSION state=%u | NAV state=%u path=%u "
+        //     "scan=%u reverse=%u steer=%.1f clearance=%.2f\n",
+        //     static_cast<unsigned>(mission_get_state()),
+        //     static_cast<unsigned>(navigation_get_status()),
+        //     navigation_has_path() ? 1u : 0u,
+        //     scan_active ? 1u : 0u,
+        //     reverse_recovery_active ? 1u : 0u,
+        //     vfh_get_steering_angle() * 180.0f / PI,
+        //     vfh_get_forward_clearance());
     }
     // Override if mission state commands stop.
     if (mission_should_stop())

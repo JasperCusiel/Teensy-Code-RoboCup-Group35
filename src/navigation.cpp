@@ -28,7 +28,7 @@ namespace
     constexpr uint8_t kPathValidationAheadCells = 14;
     constexpr uint8_t kReplansBeforeGoalReject = 5;
 
-    constexpr float kHomeStagingY = 0.60f;
+    constexpr float kHomeStagingY = 0.20f;
 
     navigation_goal_t active_goal = {NAV_GOAL_NONE, {0, 0}};
     // Current navigation target, either none, frontier or base.

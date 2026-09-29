@@ -27,8 +27,8 @@ namespace
         float kSForward, kSReverse, kVForward, kVReverse, kP, kI;
     };
 
-    constexpr Tuning kLeftTuning = {0.0f, 0.0f, 850.0f, 850.0f, 350.0f, 500.0f};
-    constexpr Tuning kRightTuning = {0.0f, 0.0f, 850.0f, 850.0f, 450.0f, 500.0f};
+    constexpr Tuning kLeftTuning = {0.0f, 0.0f, 850.0f, 850.0f, 450.0f, 500.0f};
+    constexpr Tuning kRightTuning = {0.0f, 0.0f, 850.0f, 850.0f, 550.0f, 500.0f};
     constexpr float kAccelerationMps2 = 0.40f;
     constexpr float kDecelerationMps2 = 0.60f;
     constexpr float kPwmSlewPerSec = 1000.0f;

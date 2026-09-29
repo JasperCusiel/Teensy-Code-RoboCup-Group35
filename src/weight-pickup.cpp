@@ -166,6 +166,13 @@ void weight_pickup_state_update()
 
 
     case PICKUP_STATUS_FAKE_WEIGHT_MOVING:
+        if (is_real_weight_inductive_sensor())
+        {
+            set_front_servo_down();
+            motion_controller_override_drive(0.0f, 0.0f);
+            lifter_stop();
+            current_state = PICKUP_STATUS_LOWERING_RAILS;
+        }
         if (!is_weight_detected_ir_reflective())
         {
             fake_weight_clear_start = millis();
