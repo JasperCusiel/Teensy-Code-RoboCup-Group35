@@ -98,7 +98,7 @@ void setup()
         delay(1);
     }
 
-    display_set_page(PAGE_MENU);
+    display_set_page(PAGE_8X8_TOF);
     Serial.println("Start");
     mission_start();
     scheduler_init(tasks, NUM_TASKS);

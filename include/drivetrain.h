@@ -2,7 +2,7 @@
 #define ROBOCUP_DRIVETRAIN_H
 #include <stdint.h>
 
-constexpr float kDrivetrainMaxWheelSpeedMps = 0.30f;
+constexpr float kDrivetrainMaxWheelSpeedMps = 0.20f;
 
 
 enum class DrivetrainFault : uint8_t
