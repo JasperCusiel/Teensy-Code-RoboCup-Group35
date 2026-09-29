@@ -171,6 +171,13 @@ void weight_pickup_state_update()
             fake_weight_clear_start = millis();
             current_state = PICKUP_STATUS_FAKE_WEIGHT_CLEAR_DELAY;
         }
+        if (is_real_weight_inductive_sensor())
+        {
+            set_front_servo_down();
+            motion_controller_override_drive(0.0f, 0.0f);
+            lifter_stop();
+            current_state = PICKUP_STATUS_LOWERING_RAILS;
+        }
         break;
 
     case PICKUP_STATUS_FAKE_WEIGHT_CLEAR_DELAY:
