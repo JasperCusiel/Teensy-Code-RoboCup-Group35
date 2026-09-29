@@ -30,6 +30,20 @@ bool active[64];
 bool weight_detected = false;
 bool wall_detected = false;
 
+// Circular buffer for non-blocking sampling
+static const uint8_t SAMPLE_BUFFER_SIZE = 8;
+static uint16_t sample_buffer[SAMPLE_BUFFER_SIZE][64];
+static uint8_t sample_index = 0;
+static uint32_t last_sample_ms = 0;
+static lidar_scan* cached_scan = nullptr;
+
+// Async calibration state
+static bool calibration_in_progress = false;
+static bool calibration_waiting_for_clear = false;  // Wait for no wall before calibrating
+static uint8_t calibration_sample_count = 0;
+static uint32_t last_calibration_sample_ms = 0;
+static uint32_t calibration_sum[64] = {0};
+
 enum WeightType
 {
     WEIGHT_NONE,
@@ -48,7 +62,8 @@ bool weight_detection_init()
     // Check sensor starts and set to 8x8 mode
     if (tof.begin() == 0 && tof.setRangingMode(eMatrix_8X8) == 0)
     {
-        fill_calibration_matrix();
+        // Start waiting for a clear environment before calibrating
+        calibration_waiting_for_clear = true;
         return true;
     }
     return false;
@@ -56,53 +71,67 @@ bool weight_detection_init()
 
 void weight_detection_task()
 {
-    static uint32_t last_sample_ms = 0;
-    static uint8_t sample_count = 0;
-    static uint32_t sum[64] = {0};
-    static uint16_t temp[64];
-    static bool sampling_active = false;
-
-    if (!sampling_active)
+    // Handle waiting for clear environment before calibration
+    if (calibration_waiting_for_clear)
     {
+        // Need at least one sample to check for walls
+        if (millis() - last_sample_ms >= TOF_SAMPLE_INTERVAL_MS)
+        {
+            last_sample_ms = millis();
+            tof.getAllData(sample_buffer[sample_index]);
+            sample_index = (sample_index + 1) % SAMPLE_BUFFER_SIZE;
+        }
+
+        // Compute averaged data
         for (int i = 0; i < 64; i++)
         {
-            sum[i] = 0;
+            uint32_t sum = 0;
+            for (int j = 0; j < SAMPLE_BUFFER_SIZE; j++)
+            {
+                sum += sample_buffer[j][i];
+            }
+            buf[i] = sum / SAMPLE_BUFFER_SIZE;
         }
-        sample_count = 0;
+
+        // Check for walls
+        cached_scan = get_scan();
+        wall_detected = tof_array_sees_wall();
+
+        if (!wall_detected)
+        {
+            // Clear path - start calibration
+            calibration_waiting_for_clear = false;
+            fill_calibration_matrix_async();
+        }
+        return;
+    }
+
+    // Non-blocking sampling - grab one sample per cycle
+    if (millis() - last_sample_ms >= TOF_SAMPLE_INTERVAL_MS)
+    {
         last_sample_ms = millis();
-        sampling_active = true;
+        tof.getAllData(sample_buffer[sample_index]);
+        sample_index = (sample_index + 1) % SAMPLE_BUFFER_SIZE;
     }
 
-    if (millis() - last_sample_ms < TOF_SAMPLE_INTERVAL_MS)
-    {
-        return;
-    }
-
-    last_sample_ms = millis();
-    tof.getAllData(temp);
-
+    // Compute averaged data from circular buffer
     for (int i = 0; i < 64; i++)
     {
-        sum[i] += temp[i];
+        uint32_t sum = 0;
+        for (int j = 0; j < SAMPLE_BUFFER_SIZE; j++)
+        {
+            sum += sample_buffer[j][i];
+        }
+        buf[i] = sum / SAMPLE_BUFFER_SIZE;
     }
-    sample_count++;
 
-    if (sample_count < 8)
-    {
-        return;
-    }
+    // Cache LIDAR scan once per task cycle
+    cached_scan = get_scan();
 
-    sampling_active = false;
-
-    for (int i = 0; i < 64; i++)
-    {
-        buf[i] = sum[i] / 8;
-    }
     int active_count = 0;
     for (int i = 0; i < 64; i++)
     {
         int16_t d = (int16_t)calibration[i] - (int16_t)buf[i];
-
         active[i] = (d > WEIGHT_MIN_DELTA && d < WEIGHT_MAX_DELTA);
         if (active[i])
         {
@@ -117,24 +146,70 @@ void weight_detection_task()
             active[i] = false;
         }
     }
+
     filter();
     wall_detected = tof_array_sees_wall();
 
-    if (wall_detected){
+    if (wall_detected)
+    {
         weight_detected = false;
         weight_type = WEIGHT_NONE;
         navigation_clear_goal();
         navigation_request_replan();
-
         return;
     }
+
     weight_detected = !wall_detected && detect_weight();
 
     if (weight_detected)
     {
         mission_report_weight_detected();
     }
-} 
+}
+
+void fill_calibration_matrix_async()
+{
+    if (!calibration_in_progress)
+    {
+        // Start calibration
+        calibration_in_progress = true;
+        calibration_sample_count = 0;
+        last_calibration_sample_ms = millis();
+        for (int i = 0; i < 64; i++)
+        {
+            calibration_sum[i] = 0;
+        }
+        return;
+    }
+
+    // Collect one sample per cycle
+    if (millis() - last_calibration_sample_ms >= TOF_CALIBRATION_SAMPLE_DELAY_MS)
+    {
+        last_calibration_sample_ms = millis();
+        tof.getAllData(buf);
+        for (int i = 0; i < 64; i++)
+        {
+            calibration_sum[i] += buf[i];
+        }
+        calibration_sample_count++;
+
+        if (calibration_sample_count >= 10)
+        {
+            // Calibration complete
+            for (int i = 0; i < 64; i++)
+            {
+                calibration[i] = calibration_sum[i] / 10;
+            }
+            calibration_in_progress = false;
+        }
+    }
+}
+
+bool is_calibration_complete()
+{
+    return !calibration_in_progress;
+}
+
 
 // void drawToF_dithered_fast(U8G2& u8g2,
 //                            uint16_t d_max,
@@ -234,7 +309,9 @@ void filter() //filter out random pixels
 
 static bool tof_array_sees_wall()
 {
-    lidar_scan* scan = get_scan();
+    if (!cached_scan) return false;
+
+    lidar_scan* scan = cached_scan;
     int adjacent_points = 0;
     float min_range = WALL_MAX_RANGE_M;
     float max_range = 0.0f;

@@ -53,9 +53,9 @@ task_t tasks[] = {
     {status_leds_task, HZ_TO_US(1), 0},
     {ir_reflective_update, HZ_TO_US(5), 0},
     {weight_dropoff_state_update, HZ_TO_US(10), 0},
-    {weight_detection_task, HZ_TO_US(10), 0},
+    {weight_detection_task, HZ_TO_US(20), 0},
     {smart_servo_monitor_task, HZ_TO_US(1), 0},
-    {drivetrain_debug_task, HZ_TO_US(2), 0}
+    //{drivetrain_debug_task, HZ_TO_US(2), 0}
 };
 
 

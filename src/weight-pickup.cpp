@@ -29,7 +29,7 @@
 #define LEFT 1
 #define CENTRE 2
 #define RIGHT 3
-#define PICKUP_DRIVE_SPEED 0.07f
+#define PICKUP_DRIVE_SPEED 0.15f
 
 static weight_pickup_state_t current_state = PICKUP_STATUS_IDLE;
 static short weight_type_check_cycle = 0;
