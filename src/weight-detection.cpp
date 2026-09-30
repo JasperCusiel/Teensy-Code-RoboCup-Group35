@@ -388,6 +388,26 @@ void weight_detection_task()
 // Compatibility with existing header declarations; task owns confirmation.
 bool detect_weight() { return weight_detected; }
 
+// Returns true if the system needs to stop for weight detection calibration
+// Continues normal tasks while wall is detected, stops when wall clears for calibration
+bool weight_detection_requires_stop()
+{
+    // If already calibrated and no issues, no need to stop
+    if (calibrated && !calFailed) return false;
+    
+    // If calibration is in progress, stop to allow it to complete
+    if (calibrating) return true;
+    
+    // If calibration failed, stop to allow retry
+    if (calFailed) return true;
+    
+    // If wall IS detected, continue normal tasks (don't stop)
+    if (wall_detected) return false;
+    
+    // Wall is not detected and not calibrated yet, stop for calibration
+    return true;
+}
+
 void filter()
 {
 } // No erosion: component analysis replaces the old filter.
