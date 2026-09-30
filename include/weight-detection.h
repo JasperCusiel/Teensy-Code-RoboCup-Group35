@@ -4,7 +4,7 @@
 
 #ifndef ROBOCUP_WEIGHT_DETECTION_H
 #define ROBOCUP_WEIGHT_DETECTION_H
-// #include "U8g2lib.h" // Not needed for detection-only mode
+#include "U8g2lib.h"
 
 bool weight_detection_init();
 // void drawToF_dithered_fast(U8G2& u8g2,

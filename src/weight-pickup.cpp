@@ -15,7 +15,9 @@
 #include "motion-controller.h"
 #include "odometry.h"
 #include "weight-detection.h"
+#include "ToF-Sensors.h"
 #include <math.h>
+#include <Arduino.h>
 
 #define WEIGHT_TYPE_CHECK_CYCLES 10
 #define ALIGNING_TIMEOUT_MS 10000
@@ -69,6 +71,20 @@ void weight_pickup_state_update()
             break;
         }
 
+        // Check if ToF detects something close AND IR value is below 200
+        {
+            uint16_t tof_distance = secondary_tof_read();
+            int16_t ir_value = get_ir_reading();
+            
+            if (tof_distance > 0 && tof_distance < 50 && ir_value < 200)
+            {
+                // ToF close + IR low = object detected, enter aligning
+                current_state = PICKUP_STATUS_ALIGNING_RIGHT;
+                Serial.printf("Detected object: ToF=%d, IR=%d\n", tof_distance, ir_value);
+                break;
+            }
+        }
+
         if (!is_weight_detected_ir_reflective())
         {
             if (!ir_clear_timer_started)
@@ -95,7 +111,31 @@ void weight_pickup_state_update()
         }
         break;
 
-    case PICKUP_STATUS_ALIGNING:
+    case PICKUP_STATUS_ALIGNING_RIGHT:
+        if (is_weight_detected_ir_reflective())
+        {
+            motion_controller_override_drive(0.0f, 0.0f);
+            current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
+            break;
+        }
+        if (millis() - aligning_start_time > ALIGNING_TIMEOUT_MS)
+        {
+            // timeout
+            motion_controller_override_drive(0.0f, 0.0f);
+            mission_report_pickup_complete(false);
+            current_state = PICKUP_STATUS_IDLE;
+            break;
+        }
+        if (detect_weight())
+        {
+            last_weight_seen_time = millis();
+            aligning_start_time = millis();
+            current_state = PICKUP_STATUS_ALIGNING;
+        }
+        motion_controller_override_drive(PICKUP_DRIVE_SPEED, 0.0f);
+        break;
+
+        case PICKUP_STATUS_ALIGNING:
         if (is_weight_detected_ir_reflective())
         {
             motion_controller_override_drive(0.0f, 0.0f);

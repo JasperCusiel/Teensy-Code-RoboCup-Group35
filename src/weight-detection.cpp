@@ -373,16 +373,16 @@ void weight_detection_task()
         return;
     }
     updateConfirmation(findCandidate());
-    if (kDebug && millis() - lastLogMs >= 250)
-    {
-        lastLogMs = millis();
-        Serial.printf(
-            "WEIGHT valid=%d peak=%d reason=%s fg=%d shift=%d wallLike=%d blob=%d size=%dx%d range=%d hits=%u/%d detected=%d read_us=%lu\n",
-            validCells, peakDelta, rejectReason, foregroundCount, sceneShift, wall_detected, candidate.count,
-            candidate.width,
-            candidate.height, candidate.range, unsigned(hits), kConfirmFrames,
-            weight_detected, (unsigned long)readTimeUs);
-    }
+    // if (kDebug && millis() - lastLogMs >= 250)
+    // {
+    //     lastLogMs = millis();
+    //     Serial.printf(
+    //         "WEIGHT valid=%d peak=%d reason=%s fg=%d shift=%d wallLike=%d blob=%d size=%dx%d range=%d hits=%u/%d detected=%d read_us=%lu\n",
+    //         validCells, peakDelta, rejectReason, foregroundCount, sceneShift, wall_detected, candidate.count,
+    //         candidate.width,
+    //         candidate.height, candidate.range, unsigned(hits), kConfirmFrames,
+    //         weight_detected, (unsigned long)readTimeUs);
+    // }
 }
 
 // Compatibility with existing header declarations; task owns confirmation.
