@@ -11,27 +11,39 @@
 
 // Mission module handles the mission logic via FSM to
 // determine the robots behavior -> IDLE, EXPLORE, WEIGHT_DETECTED, RETURN_HOME, etc.
+//
+// Rule: the robot only leaves exploration for RETURN_HOME once it is carrying
+// kTargetWeightCount weights. Path failures and "coverage complete" never end
+// exploration on their own; they just trigger recovery / another search pass.
 
 namespace
 {
     // Functions and variables private to module.
-    constexpr uint8_t kTargetWeightCount = 3; // Number of weights to collect before returning home
-    constexpr uint8_t kRecoveryFailuresBeforeReturnHome = 3;
-    constexpr uint32_t kFrontierExplorationDurationMs = 35000;
-    constexpr float kArenaCenterX = 1.5f;
-    constexpr float kArenaCenterY = 0.4f;
-    constexpr float kReturnHomeSearchStepM = 0.25f;
+    constexpr uint8_t kTargetWeightCount = 3; // Weights onboard before returning home
+    constexpr uint32_t kFrontierExplorationDurationMs = 20000;
+    constexpr uint32_t kExplorationRetryIntervalMs = 1000; // Min gap between "keep searching" replans
+    constexpr float kBaseXGreen = 0.4f;
+    constexpr float kBaseXOther = 2.6f;
+    constexpr float kBaseY = 0.4f;
+    constexpr float kReturnNudgeStepM = 0.10f;
+    constexpr float kReturnNudgeMinDistM = 0.05f;
 
-    mission_state_t state = MISSION_IDLE; //MISSION IDLE
+    mission_state_t state = MISSION_IDLE;
     uint8_t collected_weight_count = 0;
-    uint8_t recovery_failure_count = 0;
+    uint8_t recovery_failure_count = 0; // Diagnostic / escalation counter, saturates at 255
     bool weight_detected_event = false;
     bool pickup_complete_event = false;
     bool pickup_succeeded = false;
-    bool dropoff_succeeded = false;
     bool dropoff_complete_event = false;
+    bool dropoff_succeeded = false;
     uint32_t mission_started_ms = 0;
+    uint32_t last_search_replan_ms = 0;
     bool mission_started = false;
+
+    bool have_full_load()
+    {
+        return collected_weight_count >= kTargetWeightCount;
+    }
 
     void enter_state(mission_state_t new_state)
     {
@@ -41,12 +53,11 @@ namespace
         }
         state = new_state;
 
-        // Clear or request replan if we are in any of the four states below.
-        // Keeps navigation synchronized with mission state
+        // Clear the goal in states where the robot should be stationary,
+        // otherwise request a replan so navigation follows the new state.
         if (state == MISSION_IDLE || state == MISSION_WEIGHT_DETECTED ||
             state == MISSION_COMPLETE || state == MISSION_STOPPED)
         {
-            // Resets all mission progress and pending event flags set back to startup state.
             navigation_clear_goal();
         }
         else
@@ -67,17 +78,54 @@ namespace
         }
     }
 
+    // Keep searching for weights without leaving exploration.
+    // Rate limited so a "complete" coverage map doesn't replan every tick.
+    void keep_searching()
+    {
+        const uint32_t now = millis();
+        if (static_cast<uint32_t>(now - last_search_replan_ms) < kExplorationRetryIntervalMs)
+        {
+            return;
+        }
+        last_search_replan_ms = now;
+
+        // TODO: if navigation keeps reporting "complete" with a full coverage map,
+        // reset visited cells here so the arena is swept again.
+        navigation_request_replan();
+    }
+
+    // Shared by EXPLORE and RECOVERING when navigation reports coverage complete.
+    void handle_exploration_complete()
+    {
+        recovery_failure_count = 0;
+        if (have_full_load())
+        {
+            enter_state(MISSION_RETURN_HOME);
+        }
+        else
+        {
+            keep_searching();
+        }
+    }
+
+    // Path failed while exploring: never give up on exploring, just recover.
     void handle_exploration_path_failure()
     {
         reject_or_clear_navigation_goal();
-        if (recovery_failure_count < kRecoveryFailuresBeforeReturnHome)
+        if (recovery_failure_count < UINT8_MAX)
         {
             ++recovery_failure_count;
         }
 
-        enter_state(recovery_failure_count >= kRecoveryFailuresBeforeReturnHome
-                        ? MISSION_RETURN_HOME
-                        : MISSION_RECOVERING);
+        if (state == MISSION_RECOVERING)
+        {
+            // enter_state() is a no-op when already RECOVERING, so replan explicitly.
+            navigation_request_replan();
+        }
+        else
+        {
+            enter_state(MISSION_RECOVERING);
+        }
     }
 
     void keep_returning_to_base()
@@ -85,45 +133,18 @@ namespace
         pose_t pose = {};
         get_ekf_pose(&pose.x, &pose.y, &pose.theta);
 
-        const float base_x = (get_base_color() == COLOR_GREEN) ? 0.4f : 2.6f;
-        const float base_y = 0.4f;
-
+        const float base_x = (get_base_color() == COLOR_GREEN) ? kBaseXGreen : kBaseXOther;
         const float dx = base_x - pose.x;
-        const float dy = base_y - pose.y;
+        const float dy = kBaseY - pose.y;
         const float length = hypotf(dx, dy);
 
-        if (length < 0.05f)
+        if (length < kReturnNudgeMinDistM)
         {
             return;
         }
 
-        const float nx = dx / length;
-        const float ny = dy / length;
-        const float target_x = pose.x + nx * 0.10f;
-        const float target_y = pose.y + ny * 0.10f;
-
-        navigation_set_base(target_x, target_y);
-        navigation_request_replan();
-    }
-
-    void offset_return_home_towards_center()
-    {
-        pose_t pose = {};
-        get_ekf_pose(&pose.x, &pose.y, &pose.theta);
-
-        const float dx = kArenaCenterX - pose.x;
-        const float dy = kArenaCenterY - pose.y;
-        const float length = hypotf(dx, dy);
-
-        if (length < 0.05f)
-        {
-            return;
-        }
-
-        const float nx = dx / length;
-        const float ny = dy / length;
-        const float target_x = pose.x + nx * kReturnHomeSearchStepM;
-        const float target_y = pose.y + ny * kReturnHomeSearchStepM;
+        const float target_x = pose.x + (dx / length) * kReturnNudgeStepM;
+        const float target_y = pose.y + (dy / length) * kReturnNudgeStepM;
 
         navigation_set_base(target_x, target_y);
         navigation_request_replan();
@@ -141,6 +162,7 @@ void mission_init()
     dropoff_complete_event = false;
     dropoff_succeeded = false;
     mission_started_ms = 0;
+    last_search_replan_ms = 0;
     mission_started = false;
 }
 
@@ -150,12 +172,11 @@ void mission_task()
     switch (state)
     {
     case MISSION_IDLE:
-        // Nothing happens, wait until mission start called (transition to MISSION_EXPLORE)
+        // Wait until mission_start() (transition to MISSION_EXPLORE).
         break;
 
     case MISSION_EXPLORE:
-        // React to highest priority event (weight detection).
-        // Weight detected, enter weight detection state, clear event.
+        // Highest priority: weight detection.
         if (weight_detected_event)
         {
             weight_detected_event = false;
@@ -167,37 +188,32 @@ void mission_task()
         }
         else if (navigation_exploration_complete())
         {
-            // Coverage is complete, return to the saved base cell.
-            recovery_failure_count = 0;
-            enter_state(MISSION_RETURN_HOME);
+            handle_exploration_complete();
         }
         else if (navigation_has_path())
         {
             recovery_failure_count = 0;
         }
-
         break;
 
     case MISSION_WEIGHT_DETECTED:
-        // Pickup runs outside mission module, once it reports completion, count successful pickup and
-        // decide to continue exploring or return home.
+        // Pickup runs outside the mission module; once it reports completion,
+        // count the weight and either keep exploring or head home.
         if (pickup_complete_event)
         {
-            // Clear flag
             pickup_complete_event = false;
             if (pickup_succeeded && collected_weight_count < kTargetWeightCount)
             {
                 ++collected_weight_count;
             }
-            // Return home only entered after collecting target number of weights.
             recovery_failure_count = 0;
-            enter_state(collected_weight_count >= kTargetWeightCount ? MISSION_RETURN_HOME : MISSION_EXPLORE);
+            enter_state(have_full_load() ? MISSION_RETURN_HOME : MISSION_EXPLORE);
         }
         break;
 
     case MISSION_RECOVERING:
-        // Keep exploration alive after a failed target: scan, pick another goal,
-        // and only give up on exploring after repeated recovery failures.
+        // Keep exploration alive after a failed target: pick another goal and
+        // go back to EXPLORE as soon as a path exists.
         if (weight_detected_event)
         {
             weight_detected_event = false;
@@ -210,8 +226,7 @@ void mission_task()
         }
         else if (navigation_exploration_complete())
         {
-            recovery_failure_count = 0;
-            enter_state(MISSION_RETURN_HOME);
+            handle_exploration_complete();
         }
         else if (navigation_has_path())
         {
@@ -221,8 +236,8 @@ void mission_task()
         break;
 
     case MISSION_RETURN_HOME:
-        // If nav thinks we are already at the return-home target but we still cannot see
-        // the base colour, keep retrying toward the home corner rather than offsetting toward centre.
+        // If nav thinks we've reached the home target but we can't see the base
+        // colour yet, keep nudging toward the home corner.
         if (navigation_goal_reached())
         {
             if (get_current_color() == get_base_color())
@@ -246,7 +261,6 @@ void mission_task()
     case MISSION_COMPLETE:
         if (dropoff_complete_event)
         {
-            // Clear flag
             dropoff_complete_event = false;
             if (dropoff_succeeded)
             {
@@ -261,15 +275,14 @@ void mission_task()
         break;
 
     case MISSION_STOPPED:
-
         break;
     }
 }
 
 mission_state_t mission_get_state() { return state; }
 
-
-// Helper functions provide intent signals to naviagtion and autonomy without exposing transition logic.
+// Helper functions provide intent signals to navigation and autonomy without
+// exposing transition logic.
 bool mission_should_explore()
 {
     return state == MISSION_EXPLORE || state == MISSION_RECOVERING;
@@ -278,8 +291,8 @@ bool mission_should_explore()
 bool mission_should_use_coverage()
 {
     return mission_started &&
-        static_cast<uint32_t>(millis() - mission_started_ms) >=
-            kFrontierExplorationDurationMs;
+           static_cast<uint32_t>(millis() - mission_started_ms) >=
+               kFrontierExplorationDurationMs;
 }
 
 bool mission_should_return_home() { return state == MISSION_RETURN_HOME; }
@@ -287,7 +300,7 @@ bool mission_should_return_home() { return state == MISSION_RETURN_HOME; }
 bool mission_should_stop()
 {
     return state == MISSION_IDLE || state == MISSION_WEIGHT_DETECTED ||
-        state == MISSION_COMPLETE || state == MISSION_STOPPED;
+           state == MISSION_COMPLETE || state == MISSION_STOPPED;
 }
 
 void mission_start()
@@ -309,7 +322,7 @@ void mission_reset()
 }
 
 // Latch external events only when they are valid for the current mission state.
-// mission_task() consumes flags to keep transitions deterministic.
+// mission_task() consumes the flags to keep transitions deterministic.
 void mission_report_weight_detected()
 {
     if (mission_should_explore())
@@ -338,7 +351,11 @@ void mission_report_dropoff_complete(bool success)
 
 uint8_t mission_get_weight_count() { return collected_weight_count; }
 
+// Only honoured with a full load, so external callers can't bypass the rule.
 void mission_return_home()
 {
-    enter_state(MISSION_RETURN_HOME);
+    if (have_full_load())
+    {
+        enter_state(MISSION_RETURN_HOME);
+    }
 }

@@ -82,18 +82,20 @@ void weight_pickup_state_update()
             int16_t right_ir_value = get_right_ir_reading();
             int16_t left_ir_value = get_left_ir_reading();
 
-            if ((right_tof_distance > 0 && right_tof_distance < 50 && right_ir_value < 200))
+            if ((right_tof_distance > 0 && right_tof_distance < 100 && right_ir_value < 150))
             {
                 aligning_right_start_time = millis();
                 current_state = PICKUP_STATUS_ALIGNING_RIGHT;
                 Serial.printf("Detected object: ToF=%d, IR=%d\n", right_tof_distance, right_ir_value);
+                mission_report_weight_detected();
                 break;
             }
-            if ((left_tof_distance > 0 && left_tof_distance < 50 && left_ir_value < 200))
+            if ((left_tof_distance > 0 && left_tof_distance < 100 && left_ir_value < 150))
             {
                 aligning_left_start_time = millis();
                 current_state = PICKUP_STATUS_ALIGNING_LEFT;
                 Serial.printf("Detected object: ToF=%d, IR=%d\n", left_tof_distance, left_ir_value);
+                mission_report_weight_detected();
                 break;
             }
         }

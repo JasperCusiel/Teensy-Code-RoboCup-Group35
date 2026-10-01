@@ -581,17 +581,4 @@ uint8_t tof_left_get_range_status()
     return ToFLeft_RangeStatus;
 }
 
-bool secondary_tof_init()
-{
-    return tof_right_init();
-}
 
-uint16_t secondary_tof_read()
-{
-    return tof_right_read();
-}
-
-uint8_t secondary_tof_get_range_status()
-{
-    return tof_right_get_range_status();
-}
