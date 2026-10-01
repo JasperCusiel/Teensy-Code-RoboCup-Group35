@@ -33,7 +33,7 @@ void ir_reflective_update()
     int32_t sum = 0;
     for (uint8_t i = 0; i < SAMPLE_COUNT; i++) sum += buffer[i];
     average = sum / SAMPLE_COUNT;
-    right_ir_reading = analogRead(A12);
+    right_ir_reading = analogRead(A0);
 }
 
 

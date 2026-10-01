@@ -32,6 +32,7 @@
 #define CENTRE 2
 #define RIGHT 3
 #define PICKUP_DRIVE_SPEED 0.15f
+#define ALIGNING_RIGHT_TIMEOUT_MS 4000
 
 static weight_pickup_state_t current_state = PICKUP_STATUS_IDLE;
 static short weight_type_check_cycle = 0;
@@ -40,12 +41,14 @@ static unsigned long fake_weight_clear_start = 0;
 static unsigned long loading_confirm_start = 0;
 static unsigned long last_weight_seen_time = 0;
 static unsigned long ir_clear_start_time = 0;
+static unsigned long aligning_right_start_time = 0;
 static bool ir_pickup_armed = true;
 static bool ir_clear_timer_started = false;
 
 
 void weight_pickup_state_update()
 {
+    Serial.printf("Current state: %d\n", current_state);
     // Pickup FSM
     if (mission_get_state() == MISSION_STOPPED ||
         mission_get_state() == MISSION_IDLE)
@@ -79,6 +82,7 @@ void weight_pickup_state_update()
             if (tof_distance > 0 && tof_distance < 50 && ir_value < 200)
             {
                 // ToF close + IR low = object detected, enter aligning
+                aligning_right_start_time = millis();
                 current_state = PICKUP_STATUS_ALIGNING_RIGHT;
                 Serial.printf("Detected object: ToF=%d, IR=%d\n", tof_distance, ir_value);
                 break;
@@ -118,21 +122,24 @@ void weight_pickup_state_update()
             current_state = PICKUP_STATUS_CHECKING_WEIGHT_TYPE;
             break;
         }
-        if (millis() - aligning_start_time > ALIGNING_TIMEOUT_MS)
+        if (millis() - aligning_right_start_time > ALIGNING_RIGHT_TIMEOUT_MS)
         {
             // timeout
             motion_controller_override_drive(0.0f, 0.0f);
             mission_report_pickup_complete(false);
-            current_state = PICKUP_STATUS_IDLE;
+            last_weight_seen_time = millis();
+            aligning_start_time = millis();
+            current_state = PICKUP_STATUS_ALIGNING;
             break;
         }
         if (detect_weight())
         {
             last_weight_seen_time = millis();
             aligning_start_time = millis();
+            motion_controller_override_drive(0.0f, 0.0f);
             current_state = PICKUP_STATUS_ALIGNING;
         }
-        motion_controller_override_drive(PICKUP_DRIVE_SPEED, 0.0f);
+        motion_controller_override_drive(0.0f, -0.8f);
         break;
 
         case PICKUP_STATUS_ALIGNING:
