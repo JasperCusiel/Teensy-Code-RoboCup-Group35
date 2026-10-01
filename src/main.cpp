@@ -69,6 +69,7 @@ void setup()
     drivetrain_init();
     autonomy_init();
     status_leds_init();
+    secondary_tof_init();
     Serial.print("Base Colour: ");
     if (get_base_color() == COLOR_GREEN)
     {

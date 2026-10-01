@@ -26,6 +26,13 @@ static lidar_scan scan;
 static uint32_t scan_sequence = 0;
 static uint32_t scan_updated_ms = 0;
 
+// ----- Secondary ToF Sensor (separate purpose) -----
+constexpr uint16_t Secondary_Dev_init = 0x29;  // Default I2C address
+constexpr uint16_t Secondary_Dev_addr = 0x36;  // Secondary sensor I2C address
+constexpr uint8_t Secondary_xshut_pin = 6;     // XSHUT pin on IO expander
+uint16_t Secondary_Distance = 0;
+uint8_t Secondary_RangeStatus = 0;
+
 // ----- VL53L1X variables -----
 constexpr uint16_t Dev_init = 0x29; // Default I2C address is 0x29
 
@@ -121,6 +128,10 @@ bool tof_init()
         io.pinMode(x_shut_pins[i], OUTPUT);
         io.digitalWrite(x_shut_pins[i], LOW);
     }
+
+    // Setup secondary sensor XSHUT pin
+    io.pinMode(Secondary_xshut_pin, OUTPUT);
+    io.digitalWrite(Secondary_xshut_pin, LOW);
 
     // Calculate angles and sectors for VFH.
     calculate_sector_indices();
@@ -422,4 +433,90 @@ uint32_t tof_get_scan_sequence()
 uint32_t tof_get_scan_updated_ms()
 {
     return scan_updated_ms;
+}
+
+// ===== Secondary ToF Sensor Functions =====
+
+bool secondary_tof_init()
+{
+    Serial.println("Initializing secondary ToF sensor...");
+    
+    // Reset the secondary sensor by driving XSHUT low then high
+    io.digitalWrite(Secondary_xshut_pin, LOW);
+    delay(10);
+    io.digitalWrite(Secondary_xshut_pin, HIGH);
+    delay(10);
+
+    // Check boot state with timeout
+    uint8_t boot_state = 0;
+    uint8_t initialize_error = 0;
+    uint32_t timeout_ms = millis() + 1000;  // 1 second timeout
+    int boot_attempts = 0;
+
+    initialize_error += VL53L1X_BootState(Secondary_Dev_init, &boot_state);
+    Serial.printf("  Initial boot state: 0x%02X, error: %d\n", boot_state, initialize_error);
+    
+    while (boot_state != 0x03 && millis() < timeout_ms)
+    {
+        delay(5);
+        initialize_error += VL53L1X_BootState(Secondary_Dev_init, &boot_state);
+        boot_attempts++;
+    }
+
+    Serial.printf("  Boot state after %d attempts: 0x%02X\n", boot_attempts, boot_state);
+
+    if (boot_state != 0x03)
+    {
+        Serial.println("  ERROR: Secondary ToF sensor boot timeout - sensor may not be connected");
+        return false;
+    }
+
+    Serial.println("  Boot state OK, configuring sensor...");
+
+    // Initialize and configure sensor
+    VL53L1X_SensorInit(Secondary_Dev_init);
+    initialize_error += VL53L1X_SetI2CAddress(Secondary_Dev_init, (Secondary_Dev_addr << 1));
+    
+    // Apply configuration
+    VL53L1X_SetDistanceMode(Secondary_Dev_addr, 2);
+    VL53L1X_SetTimingBudgetInMs(Secondary_Dev_addr, TimingBudget);
+    VL53L1X_SetInterMeasurementInMs(Secondary_Dev_addr, InterMeasurementMs);
+    VL53L1X_SetROI(Secondary_Dev_addr, WidthOfSPADsPerZone, 6);
+
+    // Start ranging
+    VL53L1X_StartRanging(Secondary_Dev_addr);
+    delay(1);
+
+    if (initialize_error != 0)
+    {
+        Serial.println("  ERROR: Configuration error during secondary ToF init");
+        return false;
+    }
+
+    Serial.println("  Secondary ToF sensor initialized successfully");
+    return true;
+}
+uint16_t secondary_tof_read()
+{
+    // Check if data is ready
+    uint8_t dataReady = 0;
+    if (VL53L1X_CheckForDataReady(Secondary_Dev_addr, &dataReady) == 0 && dataReady)
+    {
+        // Get the measurement
+        uint16_t distance = 0;
+        VL53L1X_GetDistance(Secondary_Dev_addr, &distance);
+        VL53L1X_GetRangeStatus(Secondary_Dev_addr, &Secondary_RangeStatus);
+        VL53L1X_ClearInterrupt(Secondary_Dev_addr);
+        Secondary_Distance = distance;
+        Serial.print("Secondary ToF Distance: ");
+        Serial.println(distance);
+    }
+    
+    // Return cached value (either newly updated or previous reading)
+    return Secondary_Distance;
+}
+
+uint8_t secondary_tof_get_range_status()
+{
+    return Secondary_RangeStatus;
 }

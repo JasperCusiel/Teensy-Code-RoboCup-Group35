@@ -4,7 +4,7 @@
 
 #ifndef ROBOCUP_WEIGHT_DETECTION_H
 #define ROBOCUP_WEIGHT_DETECTION_H
-// #include "U8g2lib.h" // Not needed for detection-only mode
+#include "U8g2lib.h"
 
 bool weight_detection_init();
 // void drawToF_dithered_fast(U8G2& u8g2,
@@ -18,6 +18,6 @@ void fill_calibration_matrix_async(); // Non-blocking calibration
 bool detect_weight();
 void weight_detection_task();
 bool is_calibration_complete();  // Check if async calibration is done
-
+bool weight_detection_requires_stop();  // Returns true if system needs to stop for calibration
 
 #endif // ROBOCUP_WEIGHT_DETECTION_H

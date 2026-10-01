@@ -4,20 +4,23 @@
 
 #include <IR-reflective.h>
 #include <core_pins.h>
+#include <Arduino.h>
 
 #define SENSE_PIN A13
-#define SENSE_THRESHOLD 10
+#define SENSE_THRESHOLD 10   
 #define SAMPLE_COUNT 3
 
 static int16_t buffer[3] = {0, 0, 0};
-static uint8_t buf_index = 0;
+static uint8_t buf_index = 0; 
 static int16_t average = 0;
+int16_t right_ir_reading = 0;
 
 
 bool ir_reflective_sensor_init()
 {
     // Start sensor
     pinMode(SENSE_PIN, INPUT);
+    pinMode(A12, INPUT);
     return true;
 }
 
@@ -30,6 +33,7 @@ void ir_reflective_update()
     int32_t sum = 0;
     for (uint8_t i = 0; i < SAMPLE_COUNT; i++) sum += buffer[i];
     average = sum / SAMPLE_COUNT;
+    right_ir_reading = analogRead(A0);
 }
 
 
@@ -37,4 +41,9 @@ bool is_weight_detected_ir_reflective()
 {
     // Average readings and check if over threshold to determine if weight is present.
     return (average > SENSE_THRESHOLD);
+}
+
+int16_t get_ir_reading()
+{
+    return right_ir_reading;
 }
