@@ -62,17 +62,21 @@ base_color_t get_current_color()
     current.green = tcs.read16(TCS34725_GDATAL);
     current.blue = tcs.read16(TCS34725_BDATAL);
 
-    if (current.clear == 0 || current.green == current.blue)
+    if (current.clear == 0)
     {
         current.base_color = COLOR_UNDEFINED;
     }
-    else if (current.green > current.blue)
+    else if ((current.green > 100) && (current.blue <100))
     {
         current.base_color = COLOR_GREEN;
     }
-    else
+    else if (current.blue > 100)
     {
         current.base_color = COLOR_BLUE;
+    }
+    else
+    {
+        current.base_color = COLOR_UNDEFINED;
     }
 
     return current.base_color;

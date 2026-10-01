@@ -6,6 +6,7 @@
 #include "button.h"
 #include "navigation.h"
 #include "colour-sensor.h"
+#include "odometry.h"
 #include <Arduino.h>
 
 // Mission module handles the mission logic via FSM to
@@ -17,6 +18,9 @@ namespace
     constexpr uint8_t kTargetWeightCount = 3; // Number of weights to collect before returning home
     constexpr uint8_t kRecoveryFailuresBeforeReturnHome = 3;
     constexpr uint32_t kFrontierExplorationDurationMs = 35000;
+    constexpr float kArenaCenterX = 1.5f;
+    constexpr float kArenaCenterY = 0.4f;
+    constexpr float kReturnHomeSearchStepM = 0.25f;
 
     mission_state_t state = MISSION_IDLE; //MISSION IDLE
     uint8_t collected_weight_count = 0;
@@ -74,6 +78,55 @@ namespace
         enter_state(recovery_failure_count >= kRecoveryFailuresBeforeReturnHome
                         ? MISSION_RETURN_HOME
                         : MISSION_RECOVERING);
+    }
+
+    void keep_returning_to_base()
+    {
+        pose_t pose = {};
+        get_ekf_pose(&pose.x, &pose.y, &pose.theta);
+
+        const float base_x = (get_base_color() == COLOR_GREEN) ? 0.4f : 2.6f;
+        const float base_y = 0.4f;
+
+        const float dx = base_x - pose.x;
+        const float dy = base_y - pose.y;
+        const float length = hypotf(dx, dy);
+
+        if (length < 0.05f)
+        {
+            return;
+        }
+
+        const float nx = dx / length;
+        const float ny = dy / length;
+        const float target_x = pose.x + nx * 0.10f;
+        const float target_y = pose.y + ny * 0.10f;
+
+        navigation_set_base(target_x, target_y);
+        navigation_request_replan();
+    }
+
+    void offset_return_home_towards_center()
+    {
+        pose_t pose = {};
+        get_ekf_pose(&pose.x, &pose.y, &pose.theta);
+
+        const float dx = kArenaCenterX - pose.x;
+        const float dy = kArenaCenterY - pose.y;
+        const float length = hypotf(dx, dy);
+
+        if (length < 0.05f)
+        {
+            return;
+        }
+
+        const float nx = dx / length;
+        const float ny = dy / length;
+        const float target_x = pose.x + nx * kReturnHomeSearchStepM;
+        const float target_y = pose.y + ny * kReturnHomeSearchStepM;
+
+        navigation_set_base(target_x, target_y);
+        navigation_request_replan();
     }
 } // namespace
 
@@ -168,17 +221,25 @@ void mission_task()
         break;
 
     case MISSION_RETURN_HOME:
-        // If home is temporarily unreachable, keep clearing/replanning. Autonomy
-        // will spin-scan while there is no valid path.
+        // If nav thinks we are already at the return-home target but we still cannot see
+        // the base colour, keep retrying toward the home corner rather than offsetting toward centre.
+        if (navigation_goal_reached())
+        {
+            if (get_current_color() == get_base_color())
+            {
+                recovery_failure_count = 0;
+                enter_state(MISSION_COMPLETE);
+            }
+            else
+            {
+                keep_returning_to_base();
+            }
+            break;
+        }
+
         if (navigation_path_failed())
         {
             navigation_clear_goal();
-        }
-        // Enter idle state once mission is complete (at home)
-        else if (navigation_goal_reached() && (get_current_color() == get_base_color()))
-        {
-            recovery_failure_count = 0;
-            enter_state(MISSION_COMPLETE);
         }
         break;
 
