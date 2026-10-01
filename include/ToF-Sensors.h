@@ -27,9 +27,18 @@ lidar_scan* get_scan();
 uint32_t tof_get_scan_sequence();
 uint32_t tof_get_scan_updated_ms();
 
-// Secondary sensor functions
+// Secondary sensor functions (legacy compatibility)
 bool secondary_tof_init();
 uint16_t secondary_tof_read();
 uint8_t secondary_tof_get_range_status();
+
+// Right/left secondary sensor functions
+bool tof_right_init();
+uint16_t tof_right_read();
+uint8_t tof_right_get_range_status();
+
+bool tof_left_init();
+uint16_t tof_left_read();
+uint8_t tof_left_get_range_status();
 
 #endif

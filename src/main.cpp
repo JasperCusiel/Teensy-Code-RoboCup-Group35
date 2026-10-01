@@ -70,6 +70,8 @@ void setup()
     autonomy_init();
     status_leds_init();
     secondary_tof_init();
+    tof_right_init();
+    tof_left_init();
     Serial.print("Base Colour: ");
     if (get_base_color() == COLOR_GREEN)
     {

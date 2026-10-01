@@ -17,6 +17,7 @@ void ir_reflective_update();
 bool is_weight_detected_ir_reflective();
 
 // Get raw IR reading value
-int16_t get_ir_reading();
+int16_t get_right_ir_reading();
+int16_t get_left_ir_reading();
 
 #endif // ROBOCUP_IR_REFLECTIVE_H

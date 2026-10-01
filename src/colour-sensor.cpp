@@ -31,20 +31,39 @@ bool colour_sensor_init()
     return false;
 }
 
+static base_color_t classify_color(uint16_t red, uint16_t green, uint16_t blue, uint16_t clear)
+{
+    if (clear == 0)
+    {
+        return COLOR_UNDEFINED;
+    }
+
+    const float red_ratio = red / static_cast<float>(clear);
+    const float green_ratio = green / static_cast<float>(clear);
+    const float blue_ratio = blue / static_cast<float>(clear);
+
+    // Green base tends to have a noticeably stronger green response than blue.
+    // Blue base is the opposite. Use a normalized delta so the threshold is stable across lighting.
+    const float green_delta = green_ratio - blue_ratio;
+    const float blue_delta = blue_ratio - green_ratio;
+
+    if (green_delta > 0.07f || (green > blue + 60 && red_ratio > 0.10f))
+    {
+        return COLOR_GREEN;
+    }
+    if (blue_delta > 0.07f || (blue > green + 60 && red_ratio > 0.10f))
+    {
+        return COLOR_BLUE;
+    }
+
+    return COLOR_UNDEFINED;
+}
+
 void update_base_color()
 {
     // Get raw reading from colour sensor
     tcs.getRawData(&base.red, &base.green, &base.blue, &base.clear);
-
-    // Basic check to determine base color (blue base has some level of green in it but the green content shows much stronger on the green base)
-    if (base.green > base.blue)
-    {
-        base.base_color = COLOR_GREEN;
-    }
-    else
-    {
-        base.base_color = COLOR_BLUE;
-    }
+    base.base_color = classify_color(base.red, base.green, base.blue, base.clear);
 }
 
 base_color_t get_current_color()
@@ -61,23 +80,7 @@ base_color_t get_current_color()
     current.red = tcs.read16(TCS34725_RDATAL);
     current.green = tcs.read16(TCS34725_GDATAL);
     current.blue = tcs.read16(TCS34725_BDATAL);
-
-    if (current.clear == 0)
-    {
-        current.base_color = COLOR_UNDEFINED;
-    }
-    else if ((current.green > 100) && (current.blue <100))
-    {
-        current.base_color = COLOR_GREEN;
-    }
-    else if (current.blue > 100)
-    {
-        current.base_color = COLOR_BLUE;
-    }
-    else
-    {
-        current.base_color = COLOR_UNDEFINED;
-    }
+    current.base_color = classify_color(current.red, current.green, current.blue, current.clear);
 
     return current.base_color;
 }
