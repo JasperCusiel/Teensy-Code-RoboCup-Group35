@@ -416,13 +416,13 @@ void autonomy_task()
         return;
     }
 
-    // Pause to allow tof array to calibrate
-    if (weight_detection_requires_stop())
-    {
-        reset_scan();
-        safe_command = {current_pose.theta, 0.0f, 0.0f, true};
-        return;
-    }
+    // // Pause to allow tof array to calibrate
+    // if (weight_detection_requires_stop())
+    // {
+    //     reset_scan();
+    //     safe_command = {current_pose.theta, 0.0f, 0.0f, true};
+    //     return;
+    // }
 
     // Select or update navigation goal and path
     navigation_task();
@@ -493,8 +493,8 @@ void autonomy_task()
 
 void autonomy_motion_task()
 {
-    if (mission_get_state() == MISSION_STOPPED || mission_get_state() == MISSION_IDLE ||
-        weight_detection_requires_stop())
+    if (mission_get_state() == MISSION_STOPPED || mission_get_state() == MISSION_IDLE)
+        //weight_detection_requires_stop())
     {
         motion_controller_stop();
         return;

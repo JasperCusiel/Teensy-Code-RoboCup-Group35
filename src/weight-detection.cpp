@@ -392,33 +392,33 @@ void filter()
 {
 } // No erosion: component analysis replaces the old filter.
 
-void drawToF_dithered_fast(U8G2& u8g2, uint16_t d_max, int x0, int y0)
-{
-    (void)d_max;
-    const char* label = calibrating
-                            ? "CAL..."
-                            : calFailed
-                            ? "CAL FAIL"
-                            : !calibrated
-                            ? "NOT READY"
-                            : weight_detected
-                            ? "WEIGHT"
-                            : candidate.count
-                            ? "CANDIDATE"
-                            : wall_detected
-                            ? "WALL-LIKE"
-                            : "CLEAR";
-    u8g2.drawStr(70, 10, label);
-    for (int y = 0; y < 8; ++y)
-        for (int x = 0; x < 8; ++x)
-            if (active[y * 8 + x]) u8g2.drawBox(x0 + x * 8, y0 + y * 8, 8, 8);
-}
+// void drawToF_dithered_fast(U8G2& u8g2, uint16_t d_max, int x0, int y0)
+// {
+//     (void)d_max;
+//     const char* label = calibrating
+//                             ? "CAL..."
+//                             : calFailed
+//                             ? "CAL FAIL"
+//                             : !calibrated
+//                             ? "NOT READY"
+//                             : weight_detected
+//                             ? "WEIGHT"
+//                             : candidate.count
+//                             ? "CANDIDATE"
+//                             : wall_detected
+//                             ? "WALL-LIKE"
+//                             : "CLEAR";
+//     u8g2.drawStr(70, 10, label);
+//     for (int y = 0; y < 8; ++y)
+//         for (int x = 0; x < 8; ++x)
+//             if (active[y * 8 + x]) u8g2.drawBox(x0 + x * 8, y0 + y * 8, 8, 8);
+// }
 
-void draw_depth_data(U8G2& u8g2)
-{
-    static bool wasPressed = false;
-    bool pressed = read_button(A9) == LOW;
-    if (pressed && !wasPressed) fill_calibration_matrix();
-    wasPressed = pressed;
-    drawToF_dithered_fast(u8g2, 200, 0, 0);
-}
+// void draw_depth_data(U8G2& u8g2)
+// {
+//     static bool wasPressed = false;
+//     bool pressed = read_button(A9) == LOW;
+//     if (pressed && !wasPressed) fill_calibration_matrix();
+//     wasPressed = pressed;
+//     drawToF_dithered_fast(u8g2, 200, 0, 0);
+// }

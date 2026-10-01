@@ -12,7 +12,7 @@ bool weight_detection_init();
 //                            int x0, int y0);
 // void draw_detected_weights(U8G2& u8g, uint16_t d_max);
 void filter();
-// void draw_depth_data(U8G2& u8g2);
+//void draw_depth_data(U8G2& u8g2);
 void fill_calibration_matrix();
 void fill_calibration_matrix_async(); // Non-blocking calibration
 bool detect_weight();
